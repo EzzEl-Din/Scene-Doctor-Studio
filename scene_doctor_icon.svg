@@ -1,0 +1,31 @@
+<svg width="56" height="56" viewBox="0 0 56 56" xmlns="http://www.w3.org/2000/svg">
+  <rect x="0" y="0" width="56" height="56" rx="12" fill="#080D18"/>
+  <rect x="0" y="0" width="56" height="56" rx="12" fill="none" stroke="#00BFA5" stroke-width="0.8" opacity="0.3"/>
+
+  <line x1="3" y1="5" x2="10" y2="5" stroke="#00BFA5" stroke-width="0.9" opacity="0.55"/>
+  <line x1="3" y1="5" x2="3" y2="12" stroke="#00BFA5" stroke-width="0.9" opacity="0.55"/>
+  <line x1="46" y1="5" x2="53" y2="5" stroke="#00BFA5" stroke-width="0.9" opacity="0.55"/>
+  <line x1="53" y1="5" x2="53" y2="12" stroke="#00BFA5" stroke-width="0.9" opacity="0.55"/>
+  <line x1="3" y1="44" x2="10" y2="44" stroke="#00BFA5" stroke-width="0.9" opacity="0.55"/>
+  <line x1="3" y1="37" x2="3" y2="44" stroke="#00BFA5" stroke-width="0.9" opacity="0.55"/>
+  <line x1="46" y1="44" x2="53" y2="44" stroke="#00BFA5" stroke-width="0.9" opacity="0.55"/>
+  <line x1="53" y1="37" x2="53" y2="44" stroke="#00BFA5" stroke-width="0.9" opacity="0.55"/>
+
+  <polygon points="28,10 46,19 28,28 10,19" fill="#0F2438"/>
+  <polygon points="46,19 28,28 28,46 46,37" fill="#0A1B2C"/>
+  <polygon points="10,19 28,28 28,46 10,37" fill="#060F1E"/>
+
+  <line x1="28" y1="10" x2="46" y2="19" stroke="#00BFA5" stroke-width="1.1"/>
+  <line x1="46" y1="19" x2="28" y2="28" stroke="#00BFA5" stroke-width="1.1"/>
+  <line x1="28" y1="28" x2="10" y2="19" stroke="#00BFA5" stroke-width="1.1"/>
+  <line x1="10" y1="19" x2="28" y2="10" stroke="#00BFA5" stroke-width="1.1"/>
+  <line x1="46" y1="19" x2="46" y2="37" stroke="#00BFA5" stroke-width="1.1"/>
+  <line x1="10" y1="19" x2="10" y2="37" stroke="#00BFA5" stroke-width="1.1"/>
+  <line x1="28" y1="28" x2="28" y2="46" stroke="#00BFA5" stroke-width="1.1"/>
+  <line x1="46" y1="37" x2="28" y2="46" stroke="#00BFA5" stroke-width="1.1"/>
+  <line x1="10" y1="37" x2="28" y2="46" stroke="#00BFA5" stroke-width="1.1"/>
+  <line x1="46" y1="37" x2="10" y2="37" stroke="#00BFA5" stroke-width="0.6" opacity="0.3"/>
+
+  <rect x="26" y="21" width="4" height="14" fill="white" rx="1"/>
+  <rect x="21" y="26" width="14" height="4" fill="white" rx="1"/>
+</svg>

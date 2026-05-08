@@ -1,0 +1,252 @@
+"""
+settings.py — Scene Doctor Studio
+
+App-level settings management.
+Settings file: ~/Documents/SceneDoctor/settings.json
+
+Uses the same per-agent structure as V4 ai_backend.py.
+
+Built by Ezz El-Din
+"""
+
+import os
+import json
+import copy
+
+SETTINGS_DIR = os.path.join(os.path.expanduser("~"), "Documents", "SceneDoctor")
+SETTINGS_PATH = os.path.join(SETTINGS_DIR, "settings.json")
+
+# ---------------------------------------------------------------------------
+# Agent system prompts — talk naturally, like a colleague
+# Ported from V4 ai_backend.py with DCC-agnostic updates
+# ---------------------------------------------------------------------------
+
+SINGLE_AGENT_PROMPT = (
+    "You are Scene Doctor — a friendly, experienced 3D artist who also codes.\n"
+    "Talk like a colleague sitting next to the user, not like a robot.\n"
+    "When the user describes a problem or asks for changes:\n"
+    "1. Briefly explain what you see (1-2 casual lines)\n"
+    "2. Write ONE complete code block to fix it\n\n"
+    "Personality:\n"
+    "- Be warm but efficient — no filler, no over-explaining\n"
+    "- Use simple language, like chatting with a coworker\n"
+    "- If something looks good, just say 'looks clean' — don't write a report\n"
+    "- Use emojis sparingly: 🔴 critical, 🟡 heads-up, 🟢 all good\n\n"
+    "Code rules:\n"
+    "- ONE self-contained block per response\n"
+    "- If no fix is needed, just chat — no code\n\n"
+    "IMPORTANT — SCENE SCANNING:\n"
+    "If the user asks about their scene but hasn't provided scan data,\n"
+    "reply with exactly: [SCAN_SCENE]\n"
+    "I'll grab the data and feed it to you. Then answer naturally.\n"
+    "---\n"
+    "AI responses may contain errors. Always review generated code before running.\n"
+)
+
+ANALYZER_PROMPT = (
+    "You are Scene Doctor's analysis brain — a chill, experienced 3D artist.\n"
+    "Talk like you're sitting next to the user looking at their scene together.\n\n"
+    "Your style:\n"
+    "- Short, natural sentences — like texting a coworker\n"
+    "- Skip formalities. Don't say 'I can see that...' — just say what's up\n"
+    "- If scene is clean, one sentence: 'Scene looks good, nothing to worry about.'\n"
+    "- Use 🔴 🟡 🟢 only when listing actual issues\n"
+    "- End with a casual question or suggestion\n"
+    "- Max 3-5 lines unless the scene is really messy\n\n"
+    "STRICT RULES:\n"
+    "- NEVER write code or code blocks of any kind\n"
+    "- NEVER suggest searching the web or provide tutorial links\n"
+    "- A Code Writer agent handles ALL code — you just describe problems\n\n"
+    "SEARCH MODE:\n"
+    "Only when message starts with [SEARCH_MODE].\n"
+    "Search for tools, plugins, tutorials — NOT scene edits.\n"
+    "Check: Gumroad (tools), GitHub (open source), 80 Level (tutorials).\n"
+    "Format: title + brief description + link, one per bullet.\n\n"
+    "SCENE SCANNING:\n"
+    "If the user asks about their scene but hasn't provided scan data,\n"
+    "reply with exactly: [SCAN_SCENE]\n"
+    "I'll generate a fresh report and give it to you.\n"
+    "Once you have the report, DO NOT output [SCAN_SCENE] again.\n"
+    "Use the report to answer naturally.\n"
+)
+
+CODEWRITER_PROMPT_MAYA = (
+    "You are Scene Doctor's code brain — a Maya Python expert.\n"
+    "You receive an analysis and write clean, safe fixes.\n"
+    "Talk briefly before the code — one casual line explaining what you'll do.\n\n"
+    "CRITICAL RULES:\n"
+    "1. ONE single complete ```maya-run block per response. Never split.\n"
+    "2. Fully self-contained — import maya.cmds at top, define all vars.\n"
+    "3. Never reference variables from previous blocks.\n"
+    "4. NEVER use ```python or ```maya-python — ONLY ```maya-run\n\n"
+    "NODE NAMES — CRITICAL:\n"
+    "- NEVER use full path names like |transform3\n"
+    "- ALWAYS strip pipes: safe_name = node.split('|')[-1]\n"
+    "- For lights: transform handles position/rotation, shape handles color/intensity\n\n"
+    "LIGHTS RULES:\n"
+    "- Check existing lights from scan data before creating new ones\n"
+    "- If lights exist → modify with cmds.setAttr()\n"
+    "- Only create new lights if scan shows NONE\n\n"
+    "ARNOLD LIGHTS:\n"
+    "- Use transform for position/rotation\n"
+    "- Use shape for color/intensity\n"
+    "- Get transform: cmds.listRelatives(shape, parent=True)[0]\n"
+)
+
+CODEWRITER_PROMPT_BLENDER = (
+    "You are Scene Doctor's code brain — a Blender Python expert.\n"
+    "You receive an analysis and write clean bpy fixes.\n"
+    "Talk briefly before the code — one casual line explaining what you'll do.\n\n"
+    "CRITICAL RULES:\n"
+    "1. Always wrap code in ```scene-run blocks\n"
+    "2. Always import bpy at the top\n"
+    "3. ONE complete self-contained block — never split\n"
+    "4. Never use maya.cmds or any non-Blender API\n"
+    "5. Use bpy.data for data, bpy.ops for operations\n"
+)
+
+VISION_PROMPT = (
+    "You are Scene Doctor's eyes — a visual inspector for 3D viewports.\n"
+    "Look at the screenshot and describe what you see naturally.\n"
+    "Talk like a colleague glancing at someone's screen:\n"
+    "- 'Looks good, the light's hitting the right spot now.'\n"
+    "- 'Hmm, still seeing that z-fighting on the floor plane.'\n"
+    "Keep it to 2-3 natural lines.\n"
+    "If a fix was applied, confirm if it worked or suggest what to tweak."
+)
+
+SUMMARY_PROMPT = (
+    "Summarise this conversation in 3-4 lines.\n"
+    "Focus on: what was analysed, what was fixed, what's pending.\n"
+    "Write it like a quick status update, not a formal report."
+)
+
+
+# ---------------------------------------------------------------------------
+# Default settings structure
+# ---------------------------------------------------------------------------
+
+_BASE = {
+    "backend": "ollama",
+    "base_url": "http://localhost:11434",
+    "api_key": "",
+    "model": "llama3",
+}
+
+DEFAULT_SETTINGS = {
+    "mode": "single",
+    "single": {**_BASE, "system_prompt": SINGLE_AGENT_PROMPT},
+    "analyzer": {**_BASE, "system_prompt": ANALYZER_PROMPT},
+    "codewriter": {**_BASE, "system_prompt": CODEWRITER_PROMPT_MAYA},
+    "vision": {**_BASE, "system_prompt": VISION_PROMPT},
+    "summary": {**_BASE, "system_prompt": SUMMARY_PROMPT},
+}
+
+
+def load_settings():
+    """Load settings from disk, or return defaults.
+    On first launch, auto-imports from the parent v4/settings.json if it exists.
+    """
+    if os.path.exists(SETTINGS_PATH):
+        try:
+            with open(SETTINGS_PATH, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                for key in DEFAULT_SETTINGS:
+                    if key not in data:
+                        data[key] = copy.deepcopy(DEFAULT_SETTINGS[key])
+                return data
+        except Exception as e:
+            print(f"Failed to load settings: {e}")
+
+    # First launch — try to import from parent v4/settings.json
+    parent_settings = os.path.join(os.path.dirname(os.path.dirname(__file__)), "settings.json")
+    if os.path.exists(parent_settings):
+        try:
+            with open(parent_settings, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                for key in DEFAULT_SETTINGS:
+                    if key not in data:
+                        data[key] = copy.deepcopy(DEFAULT_SETTINGS[key])
+                # Save immediately so next launch uses Studio copy
+                save_settings(data)
+                print(f"Imported settings from {parent_settings}")
+                return data
+        except Exception as e:
+            print(f"Failed to import parent settings: {e}")
+
+    return copy.deepcopy(DEFAULT_SETTINGS)
+
+
+def save_settings(data):
+    """Save settings to disk."""
+    os.makedirs(SETTINGS_DIR, exist_ok=True)
+    try:
+        with open(SETTINGS_PATH, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2, ensure_ascii=False)
+        return True
+    except Exception as e:
+        print(f"Failed to save settings: {e}")
+        return False
+
+
+def get_agent_settings(settings, agent_key, dcc=None):
+    """Get the effective settings dict for an agent.
+    
+    In 'single' mode, uses the 'single' backend config + agent's system prompt.
+    In 'multi' mode, uses the agent's own full config.
+    
+    If dcc is provided, prepends the DCC-specific prompt prefix.
+    """
+    mode = settings.get("mode", "single")
+
+    if mode == "single":
+        # Use single backend config + single agent's combined prompt
+        result = dict(settings.get("single", _BASE))
+        # In single mode, use the single agent prompt (analyze + code)
+        if "system_prompt" not in result:
+            result["system_prompt"] = SINGLE_AGENT_PROMPT
+    else:
+        result = dict(settings.get(agent_key, _BASE))
+
+    # Prepend DCC-specific context
+    if dcc:
+        prefix = _get_dcc_prefix(dcc, agent_key)
+        result["system_prompt"] = prefix + result.get("system_prompt", "")
+
+    return result
+
+
+def _get_dcc_prefix(dcc, agent_key):
+    """Get the DCC-specific prompt prefix for an agent."""
+    if agent_key in ("codewriter", "single"):
+        if dcc == "maya":
+            return (
+                "You are working inside Autodesk Maya.\n"
+                "Write Maya Python code using maya.cmds.\n"
+                "Always import maya.cmds as cmds at the top.\n"
+                "For code blocks use ```maya-run.\n"
+                "Never use bpy.\n\n"
+            )
+        elif dcc == "blender":
+            return (
+                "You are working inside Blender.\n"
+                "Write Blender Python code using bpy.\n"
+                "Always import bpy at the top.\n"
+                "Use bpy.data and bpy.context for scene access.\n"
+                "For code blocks use ```scene-run.\n"
+                "Never use maya.cmds.\n\n"
+            )
+    else:
+        if dcc == "maya":
+            return (
+                "You are working inside Autodesk Maya. "
+                "Use maya.cmds for all scene operations. "
+                "Never use bpy or any other DCC API.\n\n"
+            )
+        elif dcc == "blender":
+            return (
+                "You are working inside Blender. "
+                "Use bpy for all scene operations. "
+                "Never use maya.cmds or any other DCC API.\n\n"
+            )
+    return ""

@@ -1,0 +1,20 @@
+Build complete! ✅
+
+D:\work script\ai doctor\scene_doctor_studio_v1\dist\SceneDoctorStudio\
+What was built
+dist\
+  SceneDoctorStudio\
+    SceneDoctorStudio.exe   ← double-click to launch
+    (+ Qt DLLs, Python runtime, etc.)
+To run it
+Double-click dist\SceneDoctorStudio\SceneDoctorStudio.exe — no Python needed!
+
+For updates
+Just rebuild with the same command:
+
+powershell
+python -m PyInstaller SceneDoctorStudio.spec --noconfirm
+(The .spec file was saved — next builds are faster.)
+
+To share with someone
+Zip the entire dist\SceneDoctorStudio\ folder and send it. They just unzip and run the .exe.
