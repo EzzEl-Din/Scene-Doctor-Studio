@@ -4,32 +4,30 @@ __pycache__/
 *.pyo
 *.pyd
 .Python
-
-# PyInstaller build artifacts
-build/
+*.egg-info/
 dist/
+build/
+*.build/
+*.dist/
+
+# Settings & Sessions (user data — don't upload)
+settings.json
+sessions/
+*.json
+
+# Temp files
+*.tmp
+*.temp
+temp_*.png
+temp_*.txt
 *.spec
-
-# Generated icons (rebuilt from SVG via make_icon.py)
-scene_doctor.ico
-
-# User settings & sessions (personal data — don't commit)
-# ~/Documents/SceneDoctor/ is already outside the repo
-
-# Virtual environments
-venv/
-.venv/
-env/
 
 # IDE
 .vscode/
 .idea/
-*.swp
+*.sublime-project
 
 # OS
-Thumbs.db
 .DS_Store
+Thumbs.db
 desktop.ini
-
-# Logs
-*.log

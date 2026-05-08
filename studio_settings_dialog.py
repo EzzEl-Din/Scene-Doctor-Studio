@@ -45,11 +45,14 @@ class SettingsDialog(QDialog):
         self.setMinimumWidth(500)
         self.setMaximumHeight(550)
         self.setStyleSheet(_get_style())
-        self._settings = {}
+        self._raw_settings = settings  # keep reference for non-agent keys
+        # Multi-agent configs from the nested multi_agent section
+        ma = settings.get("multi_agent", {})
+        self._agents = {}
         for k in _AGENTS:
-            self._settings[k] = dict(settings.get(k, {}))
+            self._agents[k] = dict(ma.get(k, {}))
         self._mode = settings.get("mode", "single")
-        self._single_cfg = dict(settings.get("single", {}))
+        self._single_cfg = dict(settings.get("single_agent", {}))
         self._accent_color = settings.get("accent_color", "#6b8aad")
         self._theme = settings.get("theme", "dark")
         self._build()
@@ -80,7 +83,7 @@ class SettingsDialog(QDialog):
         bkg = QButtonGroup(self)
         bkg.addButton(self._bk_ollama)
         bkg.addButton(self._bk_api)
-        init_bk = self._single_cfg.get("backend") or self._settings.get("analyzer", {}).get("backend", "ollama")
+        init_bk = self._single_cfg.get("backend") or self._agents.get("analyzer", {}).get("backend", "ollama")
         (self._bk_api if init_bk == "openai" else self._bk_ollama).setChecked(True)
         br.addWidget(self._bk_ollama)
         br.addWidget(self._bk_api)
@@ -145,7 +148,7 @@ class SettingsDialog(QDialog):
         self._single_w = QGroupBox("Single Agent")
         sf = QFormLayout(self._single_w)
         sf.setSpacing(8)
-        s = self._single_cfg or self._settings.get("analyzer", {})
+        s = self._single_cfg or self._agents.get("analyzer", {})
         self._s_url = QLineEdit(s.get("base_url", ""))
         self._s_url.setPlaceholderText("http://localhost:11434")
         sf.addRow("Base URL:", self._s_url)
@@ -208,7 +211,7 @@ class SettingsDialog(QDialog):
         w = QWidget()
         f = QFormLayout(w)
         f.setSpacing(10)
-        s = self._settings[ak]
+        s = self._agents[ak]
         url = QLineEdit(s.get("base_url", ""))
         url.setPlaceholderText("http://localhost:11434")
         f.addRow("Base URL:", url)
@@ -238,7 +241,7 @@ class SettingsDialog(QDialog):
             lbl.setStyleSheet("font-weight: bold; margin-top: 4px;")
             lo.addWidget(lbl)
             ed = QTextEdit()
-            cur = self._settings[ak].get("system_prompt", "")
+            cur = self._agents[ak].get("system_prompt", "")
             default = getattr(app_settings, {
                 "analyzer": "ANALYZER_PROMPT", "codewriter": "CODEWRITER_PROMPT_MAYA",
                 "vision": "VISION_PROMPT", "summary": "SUMMARY_PROMPT"
@@ -274,31 +277,39 @@ class SettingsDialog(QDialog):
     def _save(self):
         is_single = self._mode_single.isChecked()
         backend = "ollama" if self._bk_ollama.isChecked() else "openai"
-        self._settings["accent_color"] = self._accent_color
-        self._settings["theme"] = "light" if self._theme_light.isChecked() else "dark"
+        self._result = {
+            "mode": "single" if is_single else "multi",
+            "accent_color": self._accent_color,
+            "theme": "light" if self._theme_light.isChecked() else "dark",
+        }
         if is_single:
-            self._settings["mode"] = "single"
-            self._settings["single"] = {
+            self._result["single_agent"] = {
                 "backend": backend, "base_url": self._s_url.text().strip(),
                 "api_key": self._s_key.text().strip(), "model": self._s_model.text().strip(),
                 "system_prompt": app_settings.SINGLE_AGENT_PROMPT,
             }
+            # Keep multi_agent prompts in sync
+            multi = {}
             for ak in _AGENTS:
-                self._settings[ak] = {
+                multi[ak] = {
                     "backend": backend, "base_url": self._s_url.text().strip(),
                     "api_key": self._s_key.text().strip(), "model": self._s_model.text().strip(),
                     "system_prompt": self._prompt_edits[ak].toPlainText().strip(),
                 }
+            self._result["multi_agent"] = multi
         else:
-            self._settings["mode"] = "multi"
+            # Preserve single_agent config
+            self._result["single_agent"] = self._single_cfg
+            multi = {}
             for ak in _AGENTS:
                 w = self._agent_widgets[ak]
-                self._settings[ak] = {
+                multi[ak] = {
                     "backend": backend, "base_url": w["url"].text().strip(),
                     "api_key": w["key"].text().strip(), "model": w["model"].text().strip(),
                     "system_prompt": self._prompt_edits[ak].toPlainText().strip(),
                 }
+            self._result["multi_agent"] = multi
         self.accept()
 
     def get_settings(self):
-        return self._settings
+        return self._result

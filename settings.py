@@ -4,7 +4,9 @@ settings.py — Scene Doctor Studio
 App-level settings management.
 Settings file: ~/Documents/SceneDoctor/settings.json
 
-Uses the same per-agent structure as V4 ai_backend.py.
+Settings are organized into clear sections:
+  - single_agent: backend config for single-agent mode
+  - multi_agent:  per-agent configs for multi-agent mode
 
 Built by Ezz El-Din
 """
@@ -123,7 +125,7 @@ SUMMARY_PROMPT = (
 
 
 # ---------------------------------------------------------------------------
-# Default settings structure
+# Default settings structure — clean grouped layout
 # ---------------------------------------------------------------------------
 
 _BASE = {
@@ -135,25 +137,78 @@ _BASE = {
 
 DEFAULT_SETTINGS = {
     "mode": "single",
-    "single": {**_BASE, "system_prompt": SINGLE_AGENT_PROMPT},
-    "analyzer": {**_BASE, "system_prompt": ANALYZER_PROMPT},
-    "codewriter": {**_BASE, "system_prompt": CODEWRITER_PROMPT_MAYA},
-    "vision": {**_BASE, "system_prompt": VISION_PROMPT},
-    "summary": {**_BASE, "system_prompt": SUMMARY_PROMPT},
+    "theme": "dark",
+    "accent_color": "#2d9cdb",
+
+    "single_agent": {
+        **_BASE,
+        "system_prompt": SINGLE_AGENT_PROMPT,
+    },
+
+    "multi_agent": {
+        "analyzer":   {**_BASE, "system_prompt": ANALYZER_PROMPT},
+        "codewriter": {**_BASE, "system_prompt": CODEWRITER_PROMPT_MAYA},
+        "vision":     {**_BASE, "system_prompt": VISION_PROMPT},
+        "summary":    {**_BASE, "system_prompt": SUMMARY_PROMPT},
+    },
 }
 
 
+def _migrate_old_format(data):
+    """Convert old flat settings format to new grouped format.
+
+    Old format had 'single', 'analyzer', 'codewriter', etc. at the top level.
+    New format nests them under 'single_agent' and 'multi_agent'.
+    """
+    migrated = False
+
+    # Migrate old "single" → "single_agent"
+    if "single" in data and "single_agent" not in data:
+        data["single_agent"] = data.pop("single")
+        migrated = True
+
+    # Migrate old flat agent keys → "multi_agent"
+    agent_keys = ("analyzer", "codewriter", "vision", "summary")
+    if any(k in data for k in agent_keys) and "multi_agent" not in data:
+        data["multi_agent"] = {}
+        for k in agent_keys:
+            if k in data:
+                data["multi_agent"][k] = data.pop(k)
+        migrated = True
+
+    return migrated
+
+
 def load_settings():
-    """Load settings from disk, or return defaults.
+    """Load settings from disk, or create defaults.
+
+    Auto-creates the settings folder and file if they don't exist.
+    Migrates old flat format to the new grouped format.
     On first launch, auto-imports from the parent v4/settings.json if it exists.
     """
+    os.makedirs(SETTINGS_DIR, exist_ok=True)
+
     if os.path.exists(SETTINGS_PATH):
         try:
             with open(SETTINGS_PATH, "r", encoding="utf-8") as f:
                 data = json.load(f)
+
+                # Migrate old flat format if needed
+                if _migrate_old_format(data):
+                    save_settings(data)
+
+                # Ensure all required keys exist
                 for key in DEFAULT_SETTINGS:
                     if key not in data:
                         data[key] = copy.deepcopy(DEFAULT_SETTINGS[key])
+
+                # Ensure multi_agent has all agents
+                ma = data.get("multi_agent", {})
+                for ak in ("analyzer", "codewriter", "vision", "summary"):
+                    if ak not in ma:
+                        ma[ak] = copy.deepcopy(DEFAULT_SETTINGS["multi_agent"][ak])
+                data["multi_agent"] = ma
+
                 return data
         except Exception as e:
             print(f"Failed to load settings: {e}")
@@ -164,17 +219,20 @@ def load_settings():
         try:
             with open(parent_settings, "r", encoding="utf-8") as f:
                 data = json.load(f)
+                _migrate_old_format(data)
                 for key in DEFAULT_SETTINGS:
                     if key not in data:
                         data[key] = copy.deepcopy(DEFAULT_SETTINGS[key])
-                # Save immediately so next launch uses Studio copy
                 save_settings(data)
                 print(f"Imported settings from {parent_settings}")
                 return data
         except Exception as e:
             print(f"Failed to import parent settings: {e}")
 
-    return copy.deepcopy(DEFAULT_SETTINGS)
+    # No existing settings — create fresh defaults
+    defaults = copy.deepcopy(DEFAULT_SETTINGS)
+    save_settings(defaults)
+    return defaults
 
 
 def save_settings(data):
@@ -191,22 +249,23 @@ def save_settings(data):
 
 def get_agent_settings(settings, agent_key, dcc=None):
     """Get the effective settings dict for an agent.
-    
-    In 'single' mode, uses the 'single' backend config + agent's system prompt.
-    In 'multi' mode, uses the agent's own full config.
-    
+
+    In 'single' mode, uses the 'single_agent' backend config + its system prompt.
+    In 'multi' mode, uses the agent's own config from 'multi_agent'.
+
     If dcc is provided, prepends the DCC-specific prompt prefix.
     """
     mode = settings.get("mode", "single")
 
     if mode == "single":
-        # Use single backend config + single agent's combined prompt
-        result = dict(settings.get("single", _BASE))
-        # In single mode, use the single agent prompt (analyze + code)
+        # Use single agent config
+        result = dict(settings.get("single_agent", _BASE))
         if "system_prompt" not in result:
             result["system_prompt"] = SINGLE_AGENT_PROMPT
     else:
-        result = dict(settings.get(agent_key, _BASE))
+        # Use per-agent config from multi_agent section
+        ma = settings.get("multi_agent", {})
+        result = dict(ma.get(agent_key, _BASE))
 
     # Prepend DCC-specific context
     if dcc:

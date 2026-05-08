@@ -2,8 +2,15 @@
 session_manager.py — Scene Doctor Studio
 
 Manages chat sessions on disk.
-Save location: ~/Documents/SceneDoctor/sessions/
-File naming: {dcc}_{scene_name}_{hash8}.json
+Save location: ~/Documents/SceneDoctor/sessions/<dcc>/
+File naming: {scene_name}_{hash8}.json
+
+Sessions are organized into DCC-specific subfolders:
+  sessions/
+  ├── maya/
+  │   └── test_scene_766e394d.json
+  └── blender/
+      └── untitled_e405239a.json
 
 Built by Ezz El-Din
 """
@@ -11,13 +18,40 @@ Built by Ezz El-Din
 import os
 import json
 import hashlib
+import shutil
 from datetime import datetime
 
 SESSIONS_DIR = os.path.join(os.path.expanduser("~"), "Documents", "SceneDoctor", "sessions")
 
 
-def _ensure_dir():
-    os.makedirs(SESSIONS_DIR, exist_ok=True)
+def _ensure_dir(dcc=None):
+    """Ensure the sessions directory (and optional DCC subfolder) exists."""
+    target = os.path.join(SESSIONS_DIR, dcc) if dcc else SESSIONS_DIR
+    os.makedirs(target, exist_ok=True)
+    return target
+
+
+def _migrate_flat_sessions():
+    """One-time migration: move old flat session files into DCC subfolders."""
+    if not os.path.isdir(SESSIONS_DIR):
+        return
+    for fname in os.listdir(SESSIONS_DIR):
+        filepath = os.path.join(SESSIONS_DIR, fname)
+        # Only migrate .json files sitting directly in sessions/
+        if not fname.endswith(".json") or os.path.isdir(filepath):
+            continue
+        try:
+            with open(filepath, encoding="utf-8") as fp:
+                data = json.load(fp)
+            dcc = data.get("dcc", "unknown").lower()
+            dcc_dir = _ensure_dir(dcc)
+            dest = os.path.join(dcc_dir, fname)
+            if not os.path.exists(dest):
+                shutil.move(filepath, dest)
+            else:
+                os.remove(filepath)  # duplicate, remove old flat copy
+        except Exception:
+            continue
 
 
 def get_session_id(dcc, scene_path):
@@ -27,12 +61,12 @@ def get_session_id(dcc, scene_path):
 
 
 def get_session_path(dcc, scene_name, session_id):
-    """Build the full file path for a session."""
-    _ensure_dir()
+    """Build the full file path for a session inside its DCC subfolder."""
+    dcc_dir = _ensure_dir(dcc)
     # Sanitize scene_name for filesystem
     safe_name = "".join(c if c.isalnum() or c in ("_", "-") else "_" for c in scene_name)
-    filename = f"{dcc}_{safe_name}_{session_id}.json"
-    return os.path.join(SESSIONS_DIR, filename)
+    filename = f"{safe_name}_{session_id}.json"
+    return os.path.join(dcc_dir, filename)
 
 
 def create_session(dcc, scene_name, scene_path=""):
@@ -62,14 +96,24 @@ def save_session(session_data):
     return path
 
 
+def _iter_all_session_files():
+    """Iterate over all session JSON files across all DCC subfolders.
+    Yields (filepath, filename) tuples."""
+    _ensure_dir()
+    _migrate_flat_sessions()
+    for entry in os.listdir(SESSIONS_DIR):
+        dcc_dir = os.path.join(SESSIONS_DIR, entry)
+        if not os.path.isdir(dcc_dir):
+            continue
+        for fname in os.listdir(dcc_dir):
+            if fname.endswith(".json"):
+                yield os.path.join(dcc_dir, fname), fname
+
+
 def load_all_sessions():
     """Return all sessions sorted by last_opened (newest first)."""
-    _ensure_dir()
     sessions = []
-    for fname in os.listdir(SESSIONS_DIR):
-        if not fname.endswith(".json"):
-            continue
-        filepath = os.path.join(SESSIONS_DIR, fname)
+    for filepath, _ in _iter_all_session_files():
         try:
             with open(filepath, encoding="utf-8") as fp:
                 data = json.load(fp)
@@ -83,10 +127,8 @@ def load_all_sessions():
 
 def load_session(session_id):
     """Load a specific session by its ID."""
-    _ensure_dir()
-    for fname in os.listdir(SESSIONS_DIR):
-        if session_id in fname and fname.endswith(".json"):
-            filepath = os.path.join(SESSIONS_DIR, fname)
+    for filepath, fname in _iter_all_session_files():
+        if session_id in fname:
             try:
                 with open(filepath, encoding="utf-8") as fp:
                     return json.load(fp)
@@ -97,10 +139,8 @@ def load_session(session_id):
 
 def delete_session(session_id):
     """Delete a session file from disk."""
-    _ensure_dir()
-    for fname in os.listdir(SESSIONS_DIR):
-        if session_id in fname and fname.endswith(".json"):
-            filepath = os.path.join(SESSIONS_DIR, fname)
+    for filepath, fname in _iter_all_session_files():
+        if session_id in fname:
             try:
                 os.remove(filepath)
                 return True
@@ -111,10 +151,8 @@ def delete_session(session_id):
 
 def rename_session(session_id, new_name):
     """Rename a session's scene_name. Deletes old file and saves with new name."""
-    _ensure_dir()
-    for fname in os.listdir(SESSIONS_DIR):
-        if session_id in fname and fname.endswith(".json"):
-            filepath = os.path.join(SESSIONS_DIR, fname)
+    for filepath, fname in _iter_all_session_files():
+        if session_id in fname:
             try:
                 with open(filepath, encoding="utf-8") as fp:
                     data = json.load(fp)
@@ -134,4 +172,3 @@ def add_message(session_data, role, content, image_b64=None):
         msg["image_b64"] = image_b64
     session_data["chat_history"].append(msg)
     return session_data
-
