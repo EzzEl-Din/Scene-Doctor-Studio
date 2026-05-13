@@ -226,8 +226,9 @@ cmds.commandPort(name=":7001", sourceType="python", echoOutput=True)
 | **Groq** | llama-3.3-70b, llama-4-scout | ✓ (scout) | Fast, free tier |
 | **OpenAI** | gpt-4o, gpt-4o-mini | ✓ | Best quality |
 | **Google** | gemini-2.0-flash | ✓ | Fast + vision |
+| **Anthropic** | claude-3-5-sonnet, claude-3-opus | ✓ | Best for coding & reasoning |
 | **Ollama** | llama3, mistral, codellama, llava | ✓ (llava) | Local, private |
-| **DeepSeek** | deepseek-chat, deepseek-coder | ✗ | Great for code |
+| **DeepSeek** | deepseek-v3, deepseek-r1 | ✗ | Great for code |
 | **Any OpenAI-compatible** | — | Depends | Custom endpoints |
 
 **Recommended setup:**
