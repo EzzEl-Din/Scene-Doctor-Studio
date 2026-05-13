@@ -268,21 +268,6 @@ scene_doctor_studio_v1/
 
 ---
 
-## 🔧 Building Executable
-
-```bash
-pip install nuitka
-nuitka --standalone --enable-plugin=pyside6 main.py
-```
-
-Or with PyInstaller:
-```bash
-pip install pyinstaller
-pyinstaller --onefile --windowed main.py
-```
-
----
-
 ## 📋 Keyboard Shortcuts
 
 | Shortcut | Action |
