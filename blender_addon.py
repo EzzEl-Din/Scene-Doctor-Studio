@@ -70,6 +70,8 @@ _current_response = ""          # accumulates tokens for the active agent
 _pending_code_blocks = []       # code blocks extracted after streaming done
 _code_exec_results = {}         # {index: (success, msg)} — results of executed blocks
 _pending_screenshot_b64 = None  # viewport screenshot waiting to be sent
+_screenshot_requested = False   # flag for socket→timer screenshot handoff
+_screenshot_path = ""           # temp file path for screenshot
 
 # In-panel chat display
 _panel_chat = []  # [{"role": "user"|"analyzer"|"codewriter"|"system", "text": str}]
@@ -92,15 +94,50 @@ def extract_code_blocks(response_text):
     return blocks
 
 
+# Blender context patch — prepended to all executed code so that
+# `active_object` is always available even from a socket thread.
+BLENDER_CONTEXT_PATCH = """
+import bpy as _bpy
+try:
+    _vl = _bpy.context.view_layer
+    _active = _vl.objects.active
+    active_object = _active if _active else (list(_vl.objects.selected) or [None])[0]
+except Exception:
+    active_object = None
+"""
+
+
 def run_blender_code(code):
-    """Execute a code string inside Blender safely.
+    """Execute a code string inside Blender safely with proper context helpers.
     Returns (success: bool, message: str).
     """
+    import traceback
+
+    # Build a namespace with safe, view_layer-based context helpers so that
+    # AI-generated code using bpy.context.active_object works from any thread.
     try:
-        exec(code, {"bpy": bpy, "__builtins__": __builtins__})
+        vl = bpy.context.view_layer
+        _active = vl.objects.active
+        _selected = list(vl.objects.selected)
+        namespace = {
+            "bpy": bpy,
+            "__builtins__": __builtins__,
+            # Convenience aliases that mirror bpy.context.* but are socket-safe
+            "active_object": _active if _active else (_selected[0] if _selected else None),
+            "selected_objects": _selected,
+            "scene": bpy.context.scene,
+            "view_layer": vl,
+        }
+    except Exception:
+        # Minimal fallback if even view_layer access fails
+        namespace = {"bpy": bpy, "__builtins__": __builtins__}
+
+    try:
+        patched = BLENDER_CONTEXT_PATCH + "\n" + code
+        exec(patched, namespace)
         return True, "Done"
-    except Exception as e:
-        return False, str(e)
+    except Exception:
+        return False, traceback.format_exc()
 
 
 # ---------------------------------------------------------------------------
@@ -108,53 +145,69 @@ def run_blender_code(code):
 # ---------------------------------------------------------------------------
 
 def capture_viewport():
-    """Take a viewport screenshot and return base64-encoded PNG string."""
+    """Take a viewport screenshot and return base64-encoded PNG string.
+    Uses a multi-fallback strategy that works from any thread context.
+    """
     tmp = tempfile.mktemp(suffix=".png")
 
-    # Find the 3D viewport and render it to file
-    for area in bpy.context.screen.areas:
-        if area.type == 'VIEW_3D':
-            # Use opengl render which captures the viewport
-            override = bpy.context.copy()
-            override['area'] = area
-            for region in area.regions:
-                if region.type == 'WINDOW':
-                    override['region'] = region
-                    break
-            for space in area.spaces:
-                if space.type == 'VIEW_3D':
-                    override['space_data'] = space
-                    break
+    # --- Method 1: OpenGL render (most reliable from socket context) ---
+    try:
+        scene = bpy.context.scene
+        old_path = scene.render.filepath
+        old_fmt = scene.render.image_settings.file_format
+        scene.render.filepath = tmp
+        scene.render.image_settings.file_format = 'PNG'
 
-            # Save current render settings, set to PNG
-            scene = bpy.context.scene
-            old_path = scene.render.filepath
-            old_format = scene.render.image_settings.file_format
-            scene.render.filepath = tmp
-            scene.render.image_settings.file_format = 'PNG'
+        # Try with context override to pick up the 3D viewport
+        override = {}
+        for window in bpy.context.window_manager.windows:
+            for area in window.screen.areas:
+                if area.type == 'VIEW_3D':
+                    for region in area.regions:
+                        if region.type == 'WINDOW':
+                            override = {
+                                'window': window,
+                                'screen': window.screen,
+                                'area': area,
+                                'region': region,
+                                'space_data': area.spaces.active,
+                            }
+                            break
 
-            try:
-                # bpy.ops.render.opengl writes to render result
-                bpy.ops.render.opengl(override, write_still=True)
-            except Exception:
-                # Fallback: try screenshot
-                try:
-                    bpy.ops.screen.screenshot(override, filepath=tmp, full=False)
-                except Exception:
-                    pass
-            finally:
-                scene.render.filepath = old_path
-                scene.render.image_settings.file_format = old_format
-            break
+        if override:
+            with bpy.context.temp_override(**override):
+                bpy.ops.render.opengl(write_still=True)
+        else:
+            bpy.ops.render.opengl(write_still=True)
 
-    if os.path.exists(tmp):
-        try:
+        scene.render.filepath = old_path
+        scene.render.image_settings.file_format = old_fmt
+
+        if os.path.exists(tmp):
             with open(tmp, "rb") as f:
                 data = base64.b64encode(f.read()).decode()
             os.remove(tmp)
             return data
+    except Exception as e:
+        print(f"Scene Doctor: Screenshot method 1 failed: {e}")
+        # Restore render settings even if we errored
+        try:
+            bpy.context.scene.render.filepath = old_path
+            bpy.context.scene.render.image_settings.file_format = old_fmt
         except Exception:
             pass
+
+    # --- Method 2: Save existing Render Result if available ---
+    try:
+        if "Render Result" in bpy.data.images:
+            bpy.data.images["Render Result"].save_render(tmp)
+            with open(tmp, "rb") as f:
+                data = base64.b64encode(f.read()).decode()
+            os.remove(tmp)
+            return data
+    except Exception as e:
+        print(f"Scene Doctor: Screenshot method 2 failed: {e}")
+
     return None
 
 
@@ -706,14 +759,44 @@ def start_socket_server(port=7002):
                     chunks.append(data)
                 code = b"".join(chunks).decode("utf-8", errors="replace")
 
-                # Execute with stdout capture
+                # Special command: viewport screenshot (needs main thread)
+                if code.strip() == "__VIEWPORT_SCREENSHOT__":
+                    import tempfile
+                    tmp = os.path.join(tempfile.gettempdir(), 'scene_doctor_viewport.png')
+                    if os.path.exists(tmp):
+                        os.remove(tmp)
+                    
+                    # Flag for the timer to pick up
+                    global _screenshot_requested, _screenshot_path
+                    _screenshot_path = tmp
+                    _screenshot_requested = True
+                    
+                    # Wait for the main thread timer to capture (max 5s)
+                    import time
+                    for _ in range(50):
+                        time.sleep(0.1)
+                        if os.path.exists(tmp) and os.path.getsize(tmp) > 100:
+                            break
+                    
+                    if os.path.exists(tmp) and os.path.getsize(tmp) > 100:
+                        with open(tmp, 'rb') as f:
+                            output = base64.b64encode(f.read()).decode()
+                        os.remove(tmp)
+                    else:
+                        output = "SCREENSHOT_FAILED"
+                    
+                    conn.sendall(output.encode("utf-8"))
+                    conn.close()
+                    continue
+
+                # Execute with stdout capture, using the safe context-aware helper
                 old_stdout = sys.stdout
                 sys.stdout = capture = io.StringIO()
                 try:
-                    exec(code, {"bpy": bpy, "__builtins__": __builtins__})
+                    success, msg = run_blender_code(code)
                     output = capture.getvalue()
                     if not output:
-                        output = "OK"
+                        output = msg if not success else "OK"
                 except Exception as e:
                     output = f"ERROR: {e}"
                 finally:
@@ -760,6 +843,55 @@ classes = (
 )
 
 
+def _screenshot_timer():
+    """Timer callback — captures viewport screenshot when requested by socket server.
+    Runs on main thread so it has full OpenGL/viewport context."""
+    global _screenshot_requested, _screenshot_path
+    
+    if not _screenshot_requested:
+        return 0.1  # check again in 100ms
+    
+    _screenshot_requested = False
+    tmp = _screenshot_path
+    
+    try:
+        scene = bpy.context.scene
+        old_path = scene.render.filepath
+        old_fmt = scene.render.image_settings.file_format
+        scene.render.filepath = tmp
+        scene.render.image_settings.file_format = 'PNG'
+        
+        # Try opengl render with context override (we're on main thread now!)
+        override = {}
+        for window in bpy.context.window_manager.windows:
+            for area in window.screen.areas:
+                if area.type == 'VIEW_3D':
+                    for region in area.regions:
+                        if region.type == 'WINDOW':
+                            override = {
+                                'window': window,
+                                'screen': window.screen,
+                                'area': area,
+                                'region': region,
+                                'space_data': area.spaces.active,
+                            }
+                            break
+                    break
+            if override:
+                break
+        
+        if override:
+            with bpy.context.temp_override(**override):
+                bpy.ops.render.opengl(write_still=True)
+        
+        scene.render.filepath = old_path
+        scene.render.image_settings.file_format = old_fmt
+    except Exception as e:
+        print(f"Scene Doctor: Screenshot timer error: {e}")
+    
+    return 0.1  # keep running
+
+
 def register():
     for cls in classes:
         bpy.utils.register_class(cls)
@@ -769,6 +901,8 @@ def register():
         default=""
     )
     start_socket_server()
+    # Register screenshot timer (runs on main thread, checks for requests)
+    bpy.app.timers.register(_screenshot_timer, persistent=True)
 
 
 def unregister():

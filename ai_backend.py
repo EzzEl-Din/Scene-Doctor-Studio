@@ -54,86 +54,124 @@ except ImportError:
 # Agent system prompts — hardcoded defaults (editable in Settings > Advanced)
 # ---------------------------------------------------------------------------
 
+CONNECTION_AWARENESS_PROMPT = """
+CONNECTION RULES — CRITICAL:
+
+At the start of every message, you will receive a [SESSION CONTEXT] block showing:
+- DCC: which 3D app (Maya, Blender, etc.)
+- Status: Connected ✓ or NOT connected ✗
+- Scene: current scene name
+
+RULES:
+1. If Status is "NOT connected ✗":
+   - NEVER claim you can see the scene
+   - NEVER describe scene contents you haven't been shown
+   - Tell the user: "I can't see your scene right now — 
+     make sure Maya/Blender is open and connected."
+   - Still answer general questions normally
+
+2. If Status is "Connected ✓" but NO screenshot provided:
+   - You can access scene DATA via scan (text data)
+   - But you CANNOT see the viewport visually
+   - If user asks "can you see?" → say you have text data 
+     but no visual — suggest clicking 📷 for a screenshot
+
+3. If a screenshot IS provided:
+   - Analyze it accurately
+   - Do not describe things not visible in the image
+
+4. NEVER fabricate scene contents. 
+   NEVER say "I can see..." without actual data or image.
+"""
+
 AGENT_PROMPTS = {
-    "analyzer": (
+    "analyzer": CONNECTION_AWARENESS_PROMPT + "\n" + (
         "=== RULE #1 — LANGUAGE (NEVER BREAK THIS) ===\n"
         "Detect the language of the user's message and reply in THAT EXACT language.\n"
         "Arabic message → Arabic reply. English message → English reply.\n"
         "Mixed → use the user's dominant language.\n"
         "DO NOT reply in English if the user wrote in Arabic.\n"
         "==============================================\n\n"
-        "You are Scene Doctor — a friendly, experienced 3D artist and Maya/Blender expert.\n"
-        "You help users understand and fix issues in their 3D scenes.\n"
-        "You are NOT a general coding assistant or a chatbot. Stay focused on 3D/DCC work.\n\n"
+        "You are Scene Doctor's Analyzer — a friendly, experienced 3D artist.\n"
+        "Your job: understand the user's problem, analyze scan data, and explain clearly.\n"
+        "A separate Code Writer agent handles ALL code generation.\n\n"
+        "CONVERSATION RULES:\n"
+        "- Greetings → greet back warmly! 'Hey! Need help with your scene?'\n"
+        "- NEVER talk about the scene unless the user ASKS about it\n"
+        "- NEVER fabricate or assume scene state — you know NOTHING until scan data arrives\n"
+        "- General questions → answer normally, be helpful\n"
+        "- Scene questions → request scan with [SCAN_SCENE]\n\n"
         "TONE:\n"
-        "- Talk like a helpful colleague — warm, direct, not robotic\n"
-        "- Be concise — 2-4 sentences is usually enough\n"
-        "- No stiff report format. Talk naturally\n"
+        "- Talk like a helpful colleague — warm, direct, concise\n"
+        "- 2-4 sentences is usually enough\n"
+        "- Use simple language — the user is an artist, not a programmer\n"
         "- Use 🔴 🟡 🟢 only when real issues exist\n\n"
-        "STRICT RULES:\n"
-        "- NEVER write code — that's the Code Writer's job\n"
-        "- NEVER suggest links unless user asks\n"
-        "- Stay focused on the 3D scene context\n\n"
-        "SEARCH MODE:\n"
-        "Only activated when user message starts with [SEARCH_MODE].\n"
-        "Search only for external tools, plugins, tutorials.\n"
-        "- Check: Gumroad, GitHub, 80 Level\n"
-        "- One result per bullet with title, description, link\n\n"
+        "SCAN RESULTS:\n"
+        "- problem_count: 0 → 'Looks clean, nothing to worry about.'\n"
+        "- Problems found → list them simply, explain in plain language\n"
+        "- After listing issues → ASK: 'Want me to fix these?'\n"
+        "- NEVER auto-generate code. Wait for user confirmation.\n\n"
+        "YOUR BOUNDARIES:\n"
+        "- NEVER write code blocks — the Code Writer handles that\n"
+        "- NEVER suggest web links unless user asks\n"
+        "- NEVER make up scene information\n"
+        "- When user says 'yes/fix/do it' → your analysis will be passed to Code Writer automatically\n\n"
+        "HANDOFF TO CODE WRITER:\n"
+        "When you know the user wants code, make your analysis clear and specific:\n"
+        "- State exactly WHAT needs to be done\n"
+        "- Mention specific object names from scan data\n"
+        "- Note any constraints or things to watch out for\n"
+        "This helps the Code Writer produce accurate code on the first try.\n\n"
+        "SEARCH RESULTS:\n"
+        "When you receive [SEARCH RESULTS], summarize the best solution clearly.\n"
+        "Include relevant links. Explain in plain text — no code.\n\n"
         "SCAN PERMISSION:\n"
-        "If the user asks about their scene state and no fresh scan data exists, "
-        "reply with exactly this and nothing else:\n"
-        "[SCAN_SCENE]\n"
-        "Once scan data is provided, use it to answer naturally. Never output [SCAN_SCENE] again."
+        "If the user asks about their scene and no fresh scan data exists, "
+        "reply with exactly: [SCAN_SCENE]\n"
+        "Once scan data is provided, use it to answer naturally."
     ),
-    "codewriter": (
+    "codewriter": CONNECTION_AWARENESS_PROMPT + "\n" + (
         "=== RULE #1 — LANGUAGE (NEVER BREAK THIS) ===\n"
         "Detect the language of the user's message and reply in THAT EXACT language.\n"
         "Arabic message → Arabic reply. English message → English reply.\n"
         "Code comments may stay in English. Your explanation text must match the user's language.\n"
         "==============================================\n\n"
-        "You are a Maya Python expert and a friendly assistant.\n"
-        "You write clean, working Python fixes and explain them briefly in plain language.\n\n"
+        "You are Scene Doctor's Code Writer — a DCC Python expert.\n"
+        "You receive an analysis from the Analyzer agent and write clean, working code.\n\n"
+        "WORKFLOW:\n"
+        "You will receive a message containing:\n"
+        "- 'Scene analysis:' — what the Analyzer found (issues, object names, specifics)\n"
+        "- 'User request:' — what the user originally asked for\n"
+        "Use BOTH to write accurate, targeted code.\n\n"
         "TONE:\n"
-        "- Be helpful and natural — explain what the code does in 1-2 plain sentences\n"
-        "- Don't dump code with zero explanation\n"
-        "- If there's something to watch out for, mention it casually\n\n"
+        "- One casual line explaining what you'll do, then the code\n"
+        "- Don't repeat the analysis — the user already saw it\n"
+        "- If there's something to watch out for, mention it briefly\n\n"
         "CRITICAL RULES — CODE BLOCKS:\n\n"
-        "1. ALWAYS write ONE single complete maya-run block per task.\n"
+        "1. ALWAYS write ONE single complete code block per response.\n"
         "   Never split code into multiple blocks.\n"
-        "   Never write a \"verify\" block after the main block.\n"
-        "   All logic must be in ONE block.\n\n"
+        "   Never write a 'verify' block after the main block.\n\n"
         "2. Every block must be fully self-contained:\n"
-        "   - Import maya.cmds at the top\n"
+        "   - Import the DCC module at the top\n"
         "   - Define all variables inside the block\n"
         "   - Never reference variables from previous blocks\n\n"
-        "3. NODE NAMES — CRITICAL:\n"
-        "   - NEVER use full path names like |transform3 or |directLightShape\n"
-        "   - ALWAYS strip the pipe character from node names:\n"
-        "     safe_name = node_name.split('|')[-1]\n\n"
-        "4. NEVER use ```python or ```maya-python — ONLY ```maya-run\n\n"
-        "LIGHTS RULES:\n"
-        "- ALWAYS check existing lights from the scan data before doing anything\n"
-        "- If lights exist in scan data → ALWAYS modify them with cmds.setAttr()\n"
-        "- NEVER create new lights if lights already exist in the scene\n\n"
-        "ARNOLD LIGHTS — CRITICAL:\n"
-        "Arnold area lights have a transform node AND a shape node.\n"
-        "ALWAYS use the transform node for position/rotation.\n"
-        "ALWAYS use the shape node for color/intensity.\n\n"
-        "Correct way to get both:\n"
-        "```maya-run\n"
-        "import maya.cmds as cmds\n"
-        "shapes = cmds.ls(type='aiAreaLight')\n"
-        "if shapes:\n"
-        "    transform = cmds.listRelatives(shapes[0], parent=True, fullPath=True)[0]\n"
-        "    cmds.setAttr(shapes[0] + '.color', 0, 0, 1, type='double3')\n"
-        "    cmds.setAttr(transform + '.translateX', -5)\n"
-        "```\n\n"
-        "NEVER do this (causes NoneType error):\n"
-        "```\n"
-        "node = cmds.listConnections(light + '.message', d=False)[0]\n"
-        "```"
+        "3. Use the correct code fence for the DCC:\n"
+        "   - Maya: ```maya-run\n"
+        "   - Blender: ```scene-run\n"
+        "   - NEVER use ```python\n\n"
+        "4. NODE NAMES — CRITICAL:\n"
+        "   - NEVER use full path names like |transform3\n"
+        "   - ALWAYS strip pipes: safe_name = node.split('|')[-1]\n\n"
+        "5. Use ACTUAL object names from the scan data — never guess names.\n\n"
+        "LIGHTS RULES (Maya):\n"
+        "- Check existing lights from scan data before creating new ones\n"
+        "- If lights exist → modify with cmds.setAttr()\n"
+        "- Arnold: transform for position/rotation, shape for color/intensity\n\n"
+        "MULTI-STEP CODE:\n"
+        "When multiple steps are needed, combine ALL into ONE code block\n"
+        "with clear comments per step. NEVER split into separate blocks."
     ),
-    "vision": (
+    "vision": CONNECTION_AWARENESS_PROMPT + "\n" + (
         "You are a sharp-eyed 3D artist reviewing a viewport screenshot.\n\n"
         "LANGUAGE RULE — CRITICAL:\n"
         "Always reply in the SAME language the user writes in.\n\n"
@@ -152,6 +190,37 @@ AGENT_PROMPTS = {
         "- What was fixed or changed\n"
         "- What still needs attention\n"
         "Keep it concise and friendly — not a formal report."
+    ),
+    "single": CONNECTION_AWARENESS_PROMPT + "\n" + (
+        "=== RULE #1 — LANGUAGE (NEVER BREAK THIS) ===\n"
+        "Detect the language of the user's message and reply in THAT EXACT language.\n"
+        "Arabic → Arabic. English → English. Mixed → user's dominant language.\n"
+        "==============================================\n\n"
+        "You are Scene Doctor — a friendly, experienced 3D artist who also writes code.\n"
+        "You handle EVERYTHING: analysis, explanations, and code fixes.\n\n"
+        "CONVERSATION FLOW:\n"
+        "- Greetings → greet back warmly, ask what they need\n"
+        "- General question → answer directly, no code\n"
+        "- Scene question (no scan data) → reply with exactly: [SCAN_SCENE]\n"
+        "- Scan results with issues → explain simply, ASK 'Want me to fix these?'\n"
+        "- Scan results clean → 'Looks clean, nothing to worry about.'\n"
+        "- User says yes/fix/do it → write ONE complete code block\n"
+        "- User asks to create something → write ONE complete code block\n\n"
+        "PERSONALITY:\n"
+        "- Talk like a colleague — warm, direct, concise\n"
+        "- 2-4 sentences for explanations, then code if needed\n"
+        "- Use simple language — the user is an artist, not a programmer\n"
+        "- Use 🔴 critical, 🟡 heads-up, 🟢 all good — only for real issues\n\n"
+        "CODE RULES:\n"
+        "- ONE self-contained block per response — never split\n"
+        "- Always import the DCC module at the top\n"
+        "- If no fix is needed, just chat — no code\n"
+        "- NEVER write code unless the user asks or confirms a fix\n"
+        "- NEVER fabricate scene data — only use actual scan results\n"
+        "- Use ACTUAL object names from scan data — never guess\n\n"
+        "SEARCH RESULTS:\n"
+        "When you receive [SEARCH RESULTS], summarize the best solution in plain text.\n"
+        "Include relevant links. Only write code if the user explicitly asks.\n"
     ),
 }
 
@@ -197,7 +266,7 @@ def _build_agent_defaults(agent_key):
 
 DEFAULT_SETTINGS = {
     "mode": "single",
-    "single": dict(_BASE_AGENT_SETTINGS),
+    "single": {**_BASE_AGENT_SETTINGS, "system_prompt": AGENT_PROMPTS["single"]},
     "analyzer":   _build_agent_defaults("analyzer"),
     "codewriter": _build_agent_defaults("codewriter"),
     "vision":     _build_agent_defaults("vision"),
@@ -231,9 +300,9 @@ def migrate_settings(data):
             if agent_key not in data:
                 data[agent_key] = _build_agent_defaults(agent_key)
             else:
-                # Ensure system_prompt key exists (fill from defaults if missing)
-                if "system_prompt" not in data[agent_key]:
-                    data[agent_key]["system_prompt"] = AGENT_PROMPTS.get(agent_key, "")
+                # Always update system_prompt to latest version
+                # (ensures prompt improvements take effect without manual reset)
+                data[agent_key]["system_prompt"] = AGENT_PROMPTS.get(agent_key, "")
         # Default mode to "multi" for existing V3 configs, "single" for new
         if "mode" not in data:
             data["mode"] = "multi"
@@ -246,6 +315,8 @@ def migrate_settings(data):
                 "api_key":  a.get("api_key", ""),
                 "model":    a.get("model", "llama3"),
             }
+        # Always update single agent's system prompt to latest
+        data["single"]["system_prompt"] = AGENT_PROMPTS.get("single", "")
         return data
 
     # V2.5 flat format → migrate to single mode
@@ -373,42 +444,90 @@ class StreamWorker(QThread):
                 self._stream_openai()
         except urllib.error.HTTPError as e:
             code = e.code
-            # Try to read the error body for details
             detail = ""
             try:
                 body = e.read().decode("utf-8", errors="replace")
                 err_json = json.loads(body)
                 detail = err_json.get("error", {}).get("message", "")
             except Exception:
-                detail = body[:300] if body else ""
+                detail = body[:200] if body else ""
 
-            if detail:
-                msg = "API Error {}: {}".format(code, detail)
-            elif code == 401:
-                msg = ("Authentication failed (401). "
-                       "Please check your API key in Settings.")
+            if code == 401:
+                msg = (
+                    "\u274c Authentication failed \u2014 your API key is invalid or expired.\n"
+                    "\u2192 Go to Settings and check your API key."
+                )
             elif code == 403:
-                msg = ("Forbidden (403). Possible causes:\n"
-                       "• API key invalid or expired\n"
-                       "• Model may be blocked in your account\n"
-                       "• Check model permissions at your provider's console")
+                msg = (
+                    "\u274c Access forbidden \u2014 you may not have access to this model.\n"
+                    "\u2192 Check your account permissions or switch to a different model."
+                )
             elif code == 404:
-                msg = ("Not found (404). The API URL might be wrong. "
-                       "Check Settings > Base URL.")
+                msg = (
+                    "\u274c Not found \u2014 the API URL or model name is wrong.\n"
+                    "\u2192 Check Settings: Base URL and Model name."
+                )
+                if detail:
+                    msg += f"\n\u2192 Detail: {detail}"
             elif code == 429:
-                msg = ("Rate limited (429). Too many requests — "
-                       "wait a moment and try again.")
+                msg = (
+                    "\u26a0 Rate limit reached \u2014 too many requests.\n"
+                    "\u2192 Wait a moment and try again, or switch to a different model."
+                )
+            elif code == 500:
+                msg = (
+                    "\u274c Server error \u2014 the AI provider is having issues.\n"
+                    "\u2192 Try again in a moment, or switch provider."
+                )
+            elif code == 503:
+                msg = (
+                    "\u274c Service unavailable \u2014 the AI provider is down.\n"
+                    "\u2192 Try again later, or switch provider."
+                )
             else:
-                msg = "HTTP Error {}: {}".format(code, e.reason)
+                if detail:
+                    msg = f"\u274c API Error {code}: {detail}"
+                else:
+                    msg = f"\u274c API Error {code} \u2014 check your Settings and try again."
             self.error.emit(msg)
         except urllib.error.URLError as e:
-            self.error.emit(
-                "Cannot connect to {}. Is the server running?\n{}".format(
-                    self.settings.get("base_url", "?"), str(e.reason)
+            reason = str(e.reason)
+            base_url = self.settings.get("base_url", "")
+            if "refused" in reason.lower():
+                if "localhost" in base_url or "127.0.0.1" in base_url:
+                    msg = (
+                        "\u274c Cannot connect to local server.\n"
+                        "\u2192 Make sure Ollama is running: open terminal and run 'ollama serve'"
+                    )
+                else:
+                    msg = (
+                        f"\u274c Connection refused \u2014 cannot reach {base_url}\n"
+                        "\u2192 Check the Base URL in Settings."
+                    )
+            elif "timeout" in reason.lower() or "timed out" in reason.lower():
+                msg = (
+                    "\u26a0 Request timed out \u2014 the server took too long.\n"
+                    "\u2192 Try again, or switch to a faster model."
                 )
-            )
+            elif "no route" in reason.lower() or "network" in reason.lower():
+                msg = (
+                    "\u274c Network error \u2014 no internet connection.\n"
+                    "\u2192 Check your connection, or use a local model (Ollama)."
+                )
+            else:
+                msg = f"\u274c Connection failed: {reason}\n\u2192 Check your Settings."
+            self.error.emit(msg)
         except Exception as e:
-            self.error.emit("Error: {}".format(str(e)))
+            error_str = str(e)
+            if "api key" in error_str.lower():
+                msg = "\u274c Invalid API key \u2014 check Settings."
+            elif "model" in error_str.lower() and "not found" in error_str.lower():
+                msg = f"\u274c Model not found \u2014 check the model name in Settings.\n\u2192 {error_str}"
+            elif "timeout" in error_str.lower():
+                msg = "\u26a0 Request timed out \u2014 try again or use a faster model."
+            else:
+                msg = f"\u274c Unexpected error: {error_str}"
+            self.error.emit(msg)
 
     # ------------------------------------------------------------------
     # Ollama  — POST /api/chat  (NDJSON stream)
@@ -577,13 +696,24 @@ class StreamWorker(QThread):
                 text = f"{directive}\n{text}"
 
             if img_b64:
+                # Validate and clean base64 data
+                import base64 as _b64
+                try:
+                    # Strip any non-base64 characters and re-encode to ensure validity
+                    clean_b64 = img_b64.strip().replace('\n', '').replace('\r', '').replace(' ', '')
+                    # Verify it's valid base64 by decoding and re-encoding
+                    raw_bytes = _b64.b64decode(clean_b64)
+                    clean_b64 = _b64.b64encode(raw_bytes).decode('ascii')
+                except Exception:
+                    clean_b64 = img_b64  # fallback to original if validation fails
+                
                 if backend == "ollama":
                     new_msg["content"] = text
-                    new_msg["images"] = [img_b64]
+                    new_msg["images"] = [clean_b64]
                 else:
                     new_msg["content"] = [
                         {"type": "text", "text": text},
-                        {"type": "image_url", "image_url": {"url": "data:image/png;base64," + img_b64}}
+                        {"type": "image_url", "image_url": {"url": "data:image/png;base64," + clean_b64}}
                     ]
             else:
                 new_msg["content"] = text

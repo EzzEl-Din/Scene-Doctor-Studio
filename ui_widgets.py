@@ -17,76 +17,120 @@ from PySide6.QtGui import QFont, QColor, QPalette, QFontDatabase, QImage
 # ---------------------------------------------------------------------------
 THEMES = {
     "dark": {
-        "bg_dark": "#1b1b1f",
-        "bg_secondary": "#232329",
-        "bg_panel": "#27272e",
-        "bg_sidebar": "#18181c",
-        "bg_input": "#2a2a32",
-        "bg_msg_user": "#3d3d47",
-        "bg_msg_ai": "#27272e",
-        "bg_msg_system": "#1f1f24",
-        "bg_code": "#16161a",
-        "text": "#e8e4df",
-        "text_muted": "#8e8b87",
-        "text_code": "#a8c7e6",
-        "accent_blue": "#6b8aad",
-        "accent_blue_hover": "#5a7899",
-        "accent_teal": "#5a9e6f",
-        "accent_orange": "#c4964a",
-        "accent_green": "#5a9e6f",
-        "accent_red": "#c25d5d",
-        "accent_purple": "#9a7dba",
-        "border": "#35353d",
-        "border_hover": "#4a4a55",
-        "divider": "#2d2d34",
-        "btn_danger": "#4a2a2a",
-        "btn_danger_hover": "#5c3535",
-        "btn_secondary": "#35353d",
-        "btn_secondary_hover": "#42424d",
-        "btn_disabled": "#2d2d34",
-        "status_success": "#5a9e6f",
-        "status_warning": "#c4964a",
-        "status_critical": "#c25d5d",
-        "status_info": "#6b8aad",
-        "maya_color": "#5a8fc4",
-        "blender_color": "#d48a3a",
-        "btn_primary_text": "#ffffff",
+        # Backgrounds — deep navy family matching logo
+        "bg_dark":       "#0E1016",   # logo background — deepest
+        "bg_secondary":  "#141820",   # panels
+        "bg_panel":      "#0F1525",   # chat panel — distinct from bubbles
+        "bg_sidebar":    "#111419",   # sidebar
+        "bg_input":      "#171D2C",   # input box — slightly lighter than bg_dark
+        "bg_msg_user":   "#1a2540",   # user message — blue tint
+        "bg_msg_ai":     "#0d1117",   # AI message — darker
+        "bg_msg_system": "#111419",   # system message
+        "bg_code":       "#090C12",   # code blocks — always dark
+
+        # Text
+        "text":          "#E8E6E1",
+        "text_muted":    "#6B7280",
+        "msg_text":      "#E8E6E1",
+        "text_code":     "#5EEAD4",   # teal-tinted code text
+
+        # Accent — teal from logo
+        "accent_blue":       "#2DD4BF",   # calm teal primary
+        "accent_blue_hover": "#25B8A6",   # hover
+        "accent_teal":       "#2DD4BF",
+        "accent_orange":     "#B4853A",
+        "accent_green":      "#488E5E",
+        "accent_red":        "#B24C4C",
+        "accent_purple":     "#8A6DAA",
+
+        # Chat area
+        "bg_chat":       "#141820",   # slate blue — cohesive with dark AI theme
+
+        # Borders — subtle navy
+        "border":        "#1E2330",
+        "border_hover":  "#252B3B",
+        "divider":       "#1E2330",
+
+        # Buttons
+        "btn_danger":          "#3A1E1E",
+        "btn_danger_hover":    "#4A2828",
+        "btn_secondary":       "#1E2330",
+        "btn_secondary_hover": "#252B3B",
+        "btn_disabled":        "#121720",
+        "btn_primary_text":    "#FFFFFF",
+
+        # Status
+        "status_success":  "#488E5E",
+        "status_warning":  "#B4853A",
+        "status_critical": "#B24C4C",
+        "status_info":     "#2DD4BF",   # teal for info
+
+        # DCC colors
+        "maya_color":    "#5A8FC4",
+        "blender_color": "#D48A3A",
     },
+
     "light": {
-        "bg_dark": "#f5f3ef",
-        "bg_secondary": "#eae7e1",
-        "bg_panel": "#ffffff",
-        "bg_sidebar": "#ebe8e3",
-        "bg_input": "#f9f7f4",
-        "bg_msg_user": "#e6e3dd",
-        "bg_msg_ai": "#ffffff",
-        "bg_msg_system": "#f0ede8",
-        "bg_code": "#1b1b1f",
-        "text": "#2d2b28",
-        "text_muted": "#7a7672",
-        "text_code": "#a8c7e6",
-        "accent_blue": "#5a7d9e",
-        "accent_blue_hover": "#4a6b8a",
-        "accent_teal": "#3d8a55",
-        "accent_orange": "#b07d2e",
-        "accent_green": "#3d8a55",
-        "accent_red": "#b04a4a",
-        "accent_purple": "#7a5d9a",
-        "border": "#d8d4cd",
-        "border_hover": "#c0bbb4",
-        "divider": "#e2dfd9",
-        "btn_danger": "#e8c8c8",
-        "btn_danger_hover": "#d4a0a0",
-        "btn_secondary": "#e6e3dd",
-        "btn_secondary_hover": "#d8d4cd",
-        "btn_disabled": "#dad6cf",
-        "status_success": "#3d8a55",
-        "status_warning": "#b07d2e",
-        "status_critical": "#b04a4a",
-        "status_info": "#5a7d9e",
-        "maya_color": "#4a7ab0",
-        "blender_color": "#c07a2e",
-        "btn_primary_text": "#2d2b28",
+        # Backgrounds — cool light gray / professional
+        "bg_dark":       "#F7F5F2",   # main chat area
+        "bg_secondary":  "#EFEBE5",   # hover states
+        "bg_panel":      "#FFFFFF",   # header bar
+        "bg_sidebar":    "#F0EDE8",   # sidebar
+        "bg_input":      "#FFFFFF",   # input card
+        "bg_msg_user":   "#EDE9E3",   # user msg
+        "bg_msg_ai":     "#FFFFFF",   # AI msg
+        "bg_msg_system": "#F0EDE8",   # system msg
+        "bg_code":       "#090C12",   # code blocks — keep dark
+
+        # Text
+        "text":          "#1C1917",   # primary text
+        "text_muted":    "#78716C",   # placeholder / muted
+        "msg_text":      "#1C1917",   # user msg text
+        "msg_text_ai":   "#1C1917",   # AI msg text
+        "text_code":     "#5EEAD4",   # code text stays
+
+        # Accent — keep teal
+        "accent_blue":       "#2DD4BF",   # primary accent
+        "accent_blue_hover": "#25B8A6",
+        "accent_teal":       "#2DD4BF",
+        "accent_orange":     "#A06D1E",
+        "accent_green":      "#2D7A45",
+        "accent_red":        "#A03A3A",
+        "accent_purple":     "#6A4D8A",
+
+        # Chat area
+        "bg_chat":       "#F5F3F0",   # neutral off-white — clean, no warmth
+
+        # Borders
+        "border":        "#E0D9D0",
+        "border_hover":  "#D0C9C0",
+        "divider":       "#E0D9D0",
+
+        # Custom UI Elements
+        "border_msg_ai":       "#E0D9D0",
+        "bg_session_hover":    "#EFEBE5",
+        "bg_session_selected": "#E5E0D8",
+        "btn_pill_border":     "#D0C9C0",
+        "btn_pill_text":       "#78716C",
+        "sidebar_text_sec":    "#78716C",
+
+        # Buttons
+        "btn_danger":          "#FCE8E8",
+        "btn_danger_hover":    "#F5CCCC",
+        "btn_secondary":       "#EFEBE5",
+        "btn_secondary_hover": "#E0D9D0",
+        "btn_disabled":        "#EFEBE5",
+        "btn_primary_text":    "#ffffff",
+
+        # Status
+        "status_success":  "#2D7A45",
+        "status_warning":  "#A06D1E",
+        "status_critical": "#A03A3A",
+        "status_info":     "#2DD4BF",
+
+        # DCC colors
+        "maya_color":    "#4A7AB0",
+        "blender_color": "#C07A2E",
     },
 }
 
@@ -170,6 +214,19 @@ def get_app_stylesheet():
         padding: 8px 12px;
         font-size: 13px;
     }}
+    QTextEdit#chatInput {{
+        background: transparent;
+        border: 0px;
+        border-radius: 0px;
+        padding: 6px;
+        font-size: 14px;
+        color: {COLORS['text']};
+        outline: none;
+    }}
+    QTextEdit#chatInput:focus {{
+        border: 0px;
+        outline: none;
+    }}
     QLineEdit:focus, QTextEdit:focus {{
         border-color: {COLORS['accent_blue']};
     }}
@@ -249,10 +306,20 @@ class MessageBubble(QFrame):
             bg = COLORS["bg_msg_ai"]
             align = Qt.AlignLeft
 
+        # User bubble: simple border, no accent
+        # AI bubble: left teal accent border
+        if is_user:
+            border = f"border: 1px solid #243050;"
+        elif is_system:
+            border = "border: none;"
+        else:
+            border = f"border: 1px solid #1a1f2e; border-left: 3px solid {COLORS['accent_blue']};"
+        
         self.setStyleSheet(f"""
             MessageBubble {{
                 background: {bg};
                 border-radius: 12px;
+                {border}
                 margin: 2px {'60px 2px 8px' if is_user else '8px 2px 60px'};
             }}
         """)
@@ -272,8 +339,12 @@ class MessageBubble(QFrame):
         self.content_label = QLabel(self._text)
         self.content_label.setWordWrap(True)
         self.content_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        text_color = COLORS.get('msg_text', COLORS['text'])
+        if not is_user and not is_system:
+            text_color = COLORS.get('msg_text_ai', text_color)
+            
         self.content_label.setStyleSheet(
-            f"color: {COLORS['text']}; font-size: 13px; "
+            f"color: {text_color}; font-size: 13px; "
             f"background: transparent; line-height: 1.5;"
         )
         layout.addWidget(self.content_label)
@@ -359,10 +430,15 @@ class CodeBlockWidget(QFrame):
         self.run_btn.setStyleSheet(f"""
             QPushButton {{
                 background: {COLORS['accent_green']};
-                color: white; border-radius: 4px;
+                color: {COLORS.get('btn_primary_text', COLORS['text'])};
+                border: 1px solid {COLORS['border']};
+                border-radius: 4px;
                 font-size: 12px; padding: 2px 8px;
             }}
-            QPushButton:hover {{ background: #16a34a; }}
+            QPushButton:hover {{ 
+                background: {COLORS['status_success']};
+                border-color: {COLORS['border_hover']};
+            }}
         """)
         self.run_btn.clicked.connect(self._on_run)
         header.addWidget(self.run_btn)
@@ -372,10 +448,15 @@ class CodeBlockWidget(QFrame):
         self.dismiss_btn.setStyleSheet(f"""
             QPushButton {{
                 background: {COLORS['btn_danger']};
-                color: {COLORS['text']}; border-radius: 4px;
+                color: {COLORS['text']};
+                border: 1px solid {COLORS['border']};
+                border-radius: 4px;
                 font-size: 12px; padding: 2px 8px;
             }}
-            QPushButton:hover {{ background: {COLORS['btn_danger_hover']}; }}
+            QPushButton:hover {{ 
+                background: {COLORS['btn_danger_hover']};
+                border-color: {COLORS['border_hover']};
+            }}
         """)
         self.dismiss_btn.clicked.connect(self._dismiss)
         header.addWidget(self.dismiss_btn)
@@ -405,7 +486,12 @@ class CodeBlockWidget(QFrame):
         layout.addWidget(self.result_label)
 
     def _on_run(self):
-        """Emit the current (possibly edited) code."""
+        """Emit the current (possibly edited) code. Prevents double execution."""
+        if getattr(self, '_already_run', False):
+            return
+        self._already_run = True
+        self.run_btn.setEnabled(False)
+        self.run_btn.setText("Running...")
         current_code = self.code_edit.toPlainText()
         self.code = current_code
         self.run_clicked.emit(current_code)
@@ -415,14 +501,14 @@ class CodeBlockWidget(QFrame):
         self._dismissed = True
         self.setStyleSheet(f"""
             CodeBlockWidget {{
-                background: #2d2d2d;
+                background: {COLORS['bg_secondary']};
                 border: 1px solid {COLORS['border']};
                 border-radius: 8px;
                 margin: 4px 0;
             }}
         """)
         self.code_edit.setStyleSheet(
-            f"color: #666666; font-family: '{MONO_FONT}'; "
+            f"color: {COLORS['text_muted']}; font-family: '{MONO_FONT}'; "
             f"font-size: 12px; background: transparent; border: none;"
         )
         self.code_edit.setReadOnly(True)
@@ -489,14 +575,14 @@ class SessionItemWidget(QFrame):
 
         self._name_label = QLabel(data.get("scene_name", "untitled"))
         self._name_label.setStyleSheet(
-            f"color: {COLORS['text']}; font-weight: bold; "
+            f"color: {COLORS['text_muted']}; font-weight: bold; "
             f"font-size: 13px; background: transparent;"
         )
         info_layout.addWidget(self._name_label)
 
         self._dcc_label = QLabel(data.get("dcc", "").capitalize())
         self._dcc_label.setStyleSheet(
-            f"color: {COLORS['text_muted']}; font-size: 11px; "
+            f"color: {COLORS['text_muted']}; font-size: 10px; "
             f"background: transparent;"
         )
         info_layout.addWidget(self._dcc_label)
@@ -504,8 +590,9 @@ class SessionItemWidget(QFrame):
         self._layout.addStretch()
 
     def _get_style(self, selected):
-        bg = COLORS['bg_panel'] if selected else "transparent"
-        border = COLORS['accent_blue'] if selected else "transparent"
+        bg = COLORS['bg_secondary'] if selected else "transparent"
+        border = COLORS['accent_teal'] if selected else "transparent"
+        hover_bg = COLORS['bg_secondary']
         return f"""
             SessionItemWidget {{
                 background: {bg};
@@ -513,13 +600,23 @@ class SessionItemWidget(QFrame):
                 border-radius: 6px;
             }}
             SessionItemWidget:hover {{
-                background: {COLORS['bg_panel']};
+                background: {hover_bg};
             }}
         """
 
     def set_selected(self, sel):
         self._selected = sel
         self.setStyleSheet(self._get_style(sel))
+        if sel:
+            self._name_label.setStyleSheet(
+                f"color: {COLORS['text']}; font-weight: bold; "
+                f"font-size: 13px; background: transparent;"
+            )
+        else:
+            self._name_label.setStyleSheet(
+                f"color: {COLORS['text_muted']}; font-weight: bold; "
+                f"font-size: 13px; background: transparent;"
+            )
 
     def set_expanded(self, expanded):
         """Show/hide text labels for sidebar collapse. Center dot when collapsed."""
@@ -532,6 +629,35 @@ class SessionItemWidget(QFrame):
             # Stretch dot to fill the full 56px rail width so it centers
             self._layout.setContentsMargins(0, 6, 0, 6)
             self._dot.setFixedSize(56, 32)
+    
+    def update_theme(self, theme):
+        """Update widget colors when theme changes."""
+        # Update frame style
+        self.setStyleSheet(self._get_style(self._selected))
+        
+        # Update dot color
+        dot_color = theme.get(f"{self.dcc}_color", theme['text_muted'])
+        self._dot.setStyleSheet(
+            f"color: {dot_color}; font-size: 14px; background: transparent;"
+        )
+        
+        # Update name label
+        if self._selected:
+            self._name_label.setStyleSheet(
+                f"color: {theme['text']}; font-weight: bold; "
+                f"font-size: 13px; background: transparent;"
+            )
+        else:
+            self._name_label.setStyleSheet(
+                f"color: {theme['text_muted']}; font-weight: bold; "
+                f"font-size: 13px; background: transparent;"
+            )
+        
+        # Update DCC label
+        self._dcc_label.setStyleSheet(
+            f"color: {theme['text_muted']}; font-size: 10px; "
+            f"background: transparent;"
+        )
 
     def mousePressEvent(self, event):
         self.clicked.emit(self.session_id)

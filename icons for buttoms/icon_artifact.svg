@@ -1,0 +1,14 @@
+<svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+  <!-- document body -->
+  <rect x="4" y="2" width="17" height="22" rx="2" fill="none" stroke="#9ca3af" stroke-width="1.5"/>
+  <!-- folded corner -->
+  <path d="M16 2 L21 7" fill="none" stroke="#9ca3af" stroke-width="1.5" stroke-linecap="round"/>
+  <path d="M16 2 L16 7 L21 7" fill="#0E1016" stroke="#9ca3af" stroke-width="1.5" stroke-linejoin="round"/>
+  <!-- lines inside doc -->
+  <line x1="8"  y1="13" x2="17" y2="13" stroke="#6b7280" stroke-width="1.2" stroke-linecap="round"/>
+  <line x1="8"  y1="17" x2="17" y2="17" stroke="#6b7280" stroke-width="1.2" stroke-linecap="round"/>
+  <line x1="8"  y1="21" x2="13" y2="21" stroke="#6b7280" stroke-width="1.2" stroke-linecap="round"/>
+  <!-- teal badge -->
+  <circle cx="24" cy="24" r="7" fill="#2DD4BF"/>
+  <text x="24" y="28" font-size="7" fill="#021a14" text-anchor="middle" font-weight="700" font-family="monospace">&lt;/&gt;</text>
+</svg>

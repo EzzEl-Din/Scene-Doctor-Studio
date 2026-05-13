@@ -7,44 +7,39 @@ from PySide6.QtWidgets import (
     QFormLayout, QComboBox, QDialogButtonBox, QTabWidget, QGroupBox,
     QRadioButton, QButtonGroup, QSizePolicy, QTextEdit, QWidget
 )
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import Qt, QTimer, Signal
 from ui_widgets import COLORS, AGENT_LABELS, AGENT_TOOLTIPS
 import settings as app_settings
 
 _AGENTS = ("analyzer", "codewriter", "vision", "summary")
 
 def _get_style():
-    """Generate settings dialog stylesheet from current COLORS."""
+    """Minimal settings dialog stylesheet — avoid complex styles that cause glitches."""
     return f"""
-QDialog {{ background-color: {COLORS['bg_dark']}; color: {COLORS['text']}; font-size: 13px; }}
-QGroupBox {{ font-weight: bold; color: {COLORS['text_muted']}; border: 1px solid {COLORS['border']};
-  border-radius: 6px; margin-top: 8px; padding: 12px 10px 8px 10px; }}
-QGroupBox::title {{ subcontrol-origin: margin; left: 12px; padding: 0 6px; color: {COLORS['text']}; }}
-QRadioButton {{ color: {COLORS['text']}; spacing: 6px; }}
+QGroupBox {{ font-weight: bold; border: 1px solid {COLORS['border']}; border-radius: 6px;
+  margin-top: 8px; padding: 12px 10px 8px 10px; }}
+QGroupBox::title {{ subcontrol-origin: margin; left: 12px; padding: 0 6px; }}
 QLineEdit {{ background: {COLORS['bg_input']}; border: 1px solid {COLORS['border']};
-  border-radius: 4px; padding: 5px 8px; color: {COLORS['text']}; }}
+  border-radius: 4px; padding: 5px 8px; }}
 QLineEdit:focus {{ border-color: {COLORS['accent_blue']}; }}
-QTabWidget::pane {{ border: 1px solid {COLORS['border']}; border-radius: 4px; background: {COLORS['bg_panel']}; }}
-QTabBar::tab {{ background: {COLORS['bg_input']}; color: {COLORS['text_muted']}; padding: 6px 12px; margin-right: 2px;
-  border-top-left-radius: 4px; border-top-right-radius: 4px; }}
-QTabBar::tab:selected {{ background: {COLORS['bg_panel']}; color: {COLORS['text']}; }}
-QTabBar::tab:hover {{ color: {COLORS['text']}; }}
-QPushButton {{ background: {COLORS['btn_secondary']}; color: {COLORS['text']}; border: 1px solid {COLORS['border']};
-  border-radius: 4px; padding: 6px 14px; }}
-QPushButton:hover {{ background: {COLORS['btn_secondary_hover']}; }}
-QTextEdit {{ background: {COLORS['bg_input']}; border: 1px solid {COLORS['border']};
-  border-radius: 4px; color: {COLORS['text']}; }}
-QLabel {{ color: {COLORS['text']}; }}
 """
 
 
 class SettingsDialog(QDialog):
+    theme_changed = Signal(str)
+
     def __init__(self, settings, parent=None):
         super().__init__(parent)
         self.setWindowTitle("AI Agent Settings")
-        self.setMinimumWidth(500)
-        self.setMaximumHeight(550)
+        self.setWindowFlag(Qt.WindowContextHelpButtonHint, False)
+        self.resize(550, 650)
+        self.setMinimumSize(500, 400)
         self.setStyleSheet(_get_style())
+        from PySide6.QtGui import QPalette, QColor
+        pal = self.palette()
+        pal.setColor(QPalette.Window, QColor(COLORS['bg_dark']))
+        self.setPalette(pal)
+        self.setAutoFillBackground(True)
         self._raw_settings = settings  # keep reference for non-agent keys
         # Multi-agent configs from the nested multi_agent section
         ma = settings.get("multi_agent", {})
@@ -159,25 +154,77 @@ class SettingsDialog(QDialog):
         self._s_model = QLineEdit(s.get("model", "llama3"))
         self._s_model.setPlaceholderText("llama3 / gpt-4o / mistral ...")
         sf.addRow("Model:", self._s_model)
-        layout.addWidget(self._single_w)
-
         # Multi agent tabs
-        self._multi_w = QGroupBox("Multi Agent")
+        self._multi_w = QWidget()
         ml = QVBoxLayout(self._multi_w)
+        ml.setContentsMargins(0, 0, 0, 0)
         self._tabs = QTabWidget()
-        self._tabs.setFixedHeight(200)
+        self._tabs.setDocumentMode(True)  # Simpler rendering, less glitchy
         self._agent_widgets = {}
         for ak in _AGENTS:
             tab, widgets = self._build_tab(ak)
             self._tabs.addTab(tab, AGENT_LABELS.get(ak, ak))
             self._agent_widgets[ak] = widgets
-        adv, self._prompt_edits = self._build_advanced()
-        self._tabs.addTab(adv, "\u2699 Advanced")
         ml.addWidget(self._tabs)
         copy_btn = QPushButton("\ud83d\udccb Copy to all agents")
         copy_btn.clicked.connect(self._copy_all)
         ml.addWidget(copy_btn)
-        layout.addWidget(self._multi_w)
+
+        # Agents section (no nested tab widget — flat layout)
+        agents_section = QWidget()
+        al = QVBoxLayout(agents_section)
+        al.setContentsMargins(0, 4, 0, 0)
+        al.setSpacing(4)
+        al.addWidget(self._single_w)
+        al.addWidget(self._multi_w)
+        layout.addWidget(agents_section, 1)
+
+        # Profile section — "About You" with quick-add chips
+        profile_group = QGroupBox("About You")
+        pg_layout = QVBoxLayout(profile_group)
+        pg_layout.setContentsMargins(10, 16, 10, 8)
+        pg_layout.setSpacing(6)
+        
+        desc = QLabel("Tell the AI who you are and what you work on.")
+        desc.setStyleSheet(f"color: {COLORS['text_muted']}; font-size: 11px;")
+        pg_layout.addWidget(desc)
+        
+        self._profile_input = QTextEdit()
+        self._profile_input.setPlaceholderText(
+            "Example: I'm a Character Rigger working in Maya on game characters for Unity. "
+            "I focus on deformation quality and performance optimization."
+        )
+        self._profile_input.setFixedHeight(60)
+        saved_profile = self._raw_settings.get("user_profile", "")
+        self._profile_input.setPlainText(saved_profile)
+        pg_layout.addWidget(self._profile_input)
+        
+        # Quick-add chips
+        chips_layout = QHBoxLayout()
+        chips_layout.setSpacing(6)
+        for suggestion in ["Rigger", "Animator", "Lighter", "Modeler", "TD", "VFX Artist"]:
+            chip = QPushButton(suggestion)
+            chip.setFixedHeight(24)
+            chip.setStyleSheet(f"""
+                QPushButton {{
+                    background: {COLORS['bg_input']};
+                    border: 1px solid {COLORS['border']};
+                    border-radius: 12px;
+                    color: {COLORS['text_muted']};
+                    font-size: 10px;
+                    padding: 0 8px;
+                }}
+                QPushButton:hover {{
+                    border-color: {COLORS['accent_blue']};
+                    color: {COLORS['accent_blue']};
+                }}
+            """)
+            chip.clicked.connect(lambda checked, s=suggestion: self._append_to_profile(s))
+            chips_layout.addWidget(chip)
+        chips_layout.addStretch()
+        pg_layout.addLayout(chips_layout)
+        
+        layout.addWidget(profile_group)
 
         # Buttons
         btns = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
@@ -192,8 +239,6 @@ class SettingsDialog(QDialog):
         is_s = self._mode_single.isChecked()
         self._single_w.setVisible(is_s)
         self._multi_w.setVisible(not is_s)
-        self.layout().activate()
-        QTimer.singleShot(50, lambda: self.adjustSize())
 
     def _set_accent(self, color):
         self._accent_color = color
@@ -228,37 +273,111 @@ class SettingsDialog(QDialog):
         f.addRow("", hint)
         return w, {"url": url, "key": key, "model": model}
 
-    def _build_advanced(self):
-        w = QWidget()
-        lo = QVBoxLayout(w)
-        lo.setSpacing(6)
-        note = QLabel("Edit system prompts. Leave blank for defaults.")
-        note.setStyleSheet("color: #aaa; font-size: 11px;")
-        lo.addWidget(note)
-        edits = {}
-        for ak in _AGENTS:
-            lbl = QLabel(AGENT_LABELS.get(ak, ak))
-            lbl.setStyleSheet("font-weight: bold; margin-top: 4px;")
-            lo.addWidget(lbl)
-            ed = QTextEdit()
-            cur = self._agents[ak].get("system_prompt", "")
-            default = getattr(app_settings, {
-                "analyzer": "ANALYZER_PROMPT", "codewriter": "CODEWRITER_PROMPT_MAYA",
-                "vision": "VISION_PROMPT", "summary": "SUMMARY_PROMPT"
-            }.get(ak, ""), "")
-            ed.setPlainText(cur if cur else default)
-            ed.setFixedHeight(70)
-            ed.setStyleSheet("font-size: 11px;")
-            lo.addWidget(ed)
-            edits[ak] = ed
-        reset = QPushButton("\u21bb Reset All Prompts")
-        reset.clicked.connect(lambda: [e.setPlainText(getattr(app_settings, {
-            "analyzer": "ANALYZER_PROMPT", "codewriter": "CODEWRITER_PROMPT_MAYA",
-            "vision": "VISION_PROMPT", "summary": "SUMMARY_PROMPT"
-        }.get(k, ""), "")) for k, e in edits.items()])
-        lo.addWidget(reset)
-        lo.addStretch()
-        return w, edits
+
+
+    def _build_profile_tab(self):
+        """Build the Profile tab — personal context for AI."""
+        widget = QWidget()
+        layout = QVBoxLayout(widget)
+        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(16)
+        
+        # Header
+        title = QLabel("About You")
+        title.setStyleSheet(f"color: {COLORS['text']}; font-size: 15px; font-weight: 600;")
+        layout.addWidget(title)
+        
+        desc = QLabel(
+            "Tell the AI who you are and what you work on.\n"
+            "It will tailor every response to your workflow."
+        )
+        desc.setStyleSheet(f"color: {COLORS['text_muted']}; font-size: 12px; line-height: 1.5;")
+        desc.setWordWrap(True)
+        layout.addWidget(desc)
+        
+        # Text area
+        self._profile_input = QTextEdit()
+        self._profile_input.setPlaceholderText(
+            "Example:\n"
+            "I'm a Character Rigger working in Maya on game characters for Unity. "
+            "I focus on deformation quality and performance optimization. "
+            "I'm comfortable with Python but prefer simple, readable code. "
+            "My pipeline uses Arnold for rendering and I work in a small team."
+        )
+        self._profile_input.setMinimumHeight(120)
+        self._profile_input.setMaximumHeight(160)
+        self._profile_input.setStyleSheet(f"""
+            QTextEdit {{
+                background: {COLORS['bg_input']};
+                border: 1px solid {COLORS['border']};
+                border-radius: 10px;
+                color: {COLORS['text']};
+                font-size: 13px;
+                padding: 12px;
+                line-height: 1.6;
+            }}
+            QTextEdit:focus {{
+                border-color: {COLORS['accent_blue']};
+            }}
+        """)
+        
+        # Load saved profile
+        saved_profile = self._raw_settings.get("user_profile", "")
+        self._profile_input.setPlainText(saved_profile)
+        
+        layout.addWidget(self._profile_input)
+        
+        # Suggestions chips
+        suggestions_label = QLabel("Quick add:")
+        suggestions_label.setStyleSheet(f"color: {COLORS['text_muted']}; font-size: 11px;")
+        layout.addWidget(suggestions_label)
+        
+        chips_layout = QHBoxLayout()
+        chips_layout.setSpacing(8)
+        
+        suggestions = [
+            "Rigger", "Animator", "Lighter", "Modeler",
+            "TD", "Environment Artist", "VFX Artist"
+        ]
+        
+        for suggestion in suggestions:
+            chip = QPushButton(suggestion)
+            chip.setFixedHeight(26)
+            chip.setStyleSheet(f"""
+                QPushButton {{
+                    background: {COLORS['bg_input']};
+                    border: 1px solid {COLORS['border']};
+                    border-radius: 13px;
+                    color: {COLORS['text_muted']};
+                    font-size: 11px;
+                    padding: 0 10px;
+                }}
+                QPushButton:hover {{
+                    border-color: {COLORS['accent_blue']};
+                    color: {COLORS['accent_blue']};
+                }}
+            """)
+            chip.clicked.connect(
+                lambda checked, s=suggestion: self._append_to_profile(s)
+            )
+            chips_layout.addWidget(chip)
+        
+        chips_layout.addStretch()
+        layout.addLayout(chips_layout)
+        layout.addStretch()
+        
+        return widget
+
+    def _append_to_profile(self, text):
+        current = self._profile_input.toPlainText()
+        if text.lower() not in current.lower():
+            if current and not current.endswith("\n"):
+                current += "\n"
+            self._profile_input.setPlainText(current + f"I'm a {text}.")
+            # Move cursor to end
+            cursor = self._profile_input.textCursor()
+            cursor.movePosition(cursor.MoveOperation.End)
+            self._profile_input.setTextCursor(cursor)
 
     def _copy_all(self):
         idx = self._tabs.currentIndex()
@@ -277,10 +396,14 @@ class SettingsDialog(QDialog):
     def _save(self):
         is_single = self._mode_single.isChecked()
         backend = "ollama" if self._bk_ollama.isChecked() else "openai"
+        
+        new_theme = "light" if self._theme_light.isChecked() else "dark"
+        old_theme = self._theme
+        
         self._result = {
             "mode": "single" if is_single else "multi",
             "accent_color": self._accent_color,
-            "theme": "light" if self._theme_light.isChecked() else "dark",
+            "theme": new_theme,
         }
         if is_single:
             self._result["single_agent"] = {
@@ -294,7 +417,7 @@ class SettingsDialog(QDialog):
                 multi[ak] = {
                     "backend": backend, "base_url": self._s_url.text().strip(),
                     "api_key": self._s_key.text().strip(), "model": self._s_model.text().strip(),
-                    "system_prompt": self._prompt_edits[ak].toPlainText().strip(),
+                    "system_prompt": self._agents[ak].get("system_prompt", ""),
                 }
             self._result["multi_agent"] = multi
         else:
@@ -306,9 +429,14 @@ class SettingsDialog(QDialog):
                 multi[ak] = {
                     "backend": backend, "base_url": w["url"].text().strip(),
                     "api_key": w["key"].text().strip(), "model": w["model"].text().strip(),
-                    "system_prompt": self._prompt_edits[ak].toPlainText().strip(),
+                    "system_prompt": self._agents[ak].get("system_prompt", ""),
                 }
             self._result["multi_agent"] = multi
+        self._result["user_profile"] = self._profile_input.toPlainText().strip()
+        
+        if new_theme != old_theme:
+            self.theme_changed.emit(new_theme)
+            
         self.accept()
 
     def get_settings(self):

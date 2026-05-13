@@ -5,29 +5,43 @@ __pycache__/
 *.pyd
 .Python
 *.egg-info/
+
+# Build artifacts
 dist/
 build/
 *.build/
 *.dist/
+main.build/
+main.dist/
+*.spec
 
-# Settings & Sessions (user data — don't upload)
+# Settings & Sessions (user data)
 settings.json
 sessions/
-*.json
 
 # Temp files
 *.tmp
 *.temp
 temp_*.png
 temp_*.txt
-*.spec
 
 # IDE
 .vscode/
 .idea/
+.kiro/
 *.sublime-project
 
 # OS
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# Test files (not needed for app to run)
+test_*.py
+verify_*.py
+*_TEST_REPORT.md
+*_verification_report.md
+
+# Intro/promo HTML files
+scene_doctor_intro_*.html
+scene_doctor_video_*.html

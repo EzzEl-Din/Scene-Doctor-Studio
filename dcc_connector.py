@@ -19,6 +19,10 @@ Built by Ezz El-Din
 
 import socket
 import json
+import os
+import time
+import base64
+import concurrent.futures
 
 PORTS = {
     "maya": 7001,
@@ -33,23 +37,73 @@ DCC_INFO = {
 TIMEOUT = 10
 
 
+def _check_port(dcc, port, timeout=0.5):
+    """Check if a DCC port is open. Returns (dcc, is_open). Non-blocking."""
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.settimeout(timeout)
+        result = s.connect_ex(("localhost", port))
+        s.close()
+        return dcc, result == 0
+    except Exception:
+        return dcc, False
+
+
+def is_dcc_connected(dcc):
+    """Quick check if DCC socket is alive. Non-blocking, 0.5s timeout."""
+    port = PORTS.get(dcc)
+    if not port:
+        return False
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.settimeout(0.5)
+        result = s.connect_ex(("localhost", port))
+        s.close()
+        return result == 0
+    except Exception:
+        return False
+
+
 def detect_connected_dccs():
-    """Check which DCCs are running and have socket servers open."""
+    """Check all DCC ports in PARALLEL — no sequential blocking.
+    Returns list of connected DCC names.
+    """
     connected = []
-    for dcc, port in PORTS.items():
-        try:
-            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            s.settimeout(1)
-            s.connect(("localhost", port))
-            s.close()
-            connected.append(dcc)
-        except Exception:
-            continue
+    with concurrent.futures.ThreadPoolExecutor(max_workers=len(PORTS)) as executor:
+        futures = {
+            executor.submit(_check_port, dcc, port): dcc
+            for dcc, port in PORTS.items()
+        }
+        for future in concurrent.futures.as_completed(futures):
+            dcc, is_open = future.result()
+            if is_open:
+                connected.append(dcc)
     return connected
 
 
 def detect_connected_dcc():
     return (detect_connected_dccs() or [None])[0]
+
+
+# ---------------------------------------------------------------------------
+# QThread worker — run detect_connected_dccs() without blocking the UI
+# ---------------------------------------------------------------------------
+try:
+    from PySide6.QtCore import QThread, Signal as _Signal
+
+    class DetectDCCWorker(QThread):
+        """Run detect_connected_dccs() on a background thread.
+        Emits finished(list[str]) with the list of connected DCC names.
+        """
+        finished = _Signal(list)
+
+        def run(self):
+            dccs = detect_connected_dccs()
+            self.finished.emit(dccs)
+
+except ImportError:
+    # PySide6 not available (e.g. running inside Blender) — skip
+    DetectDCCWorker = None
 
 
 # ---------------------------------------------------------------------------
@@ -127,25 +181,18 @@ def send_code(dcc, code):
     if dcc == "maya":
         if "\n" in code.strip():
             import tempfile, os, time
-            # Write user code to temp .py file
+            # Write user code to temp .py file (add None at end to suppress return value)
             code_file = tempfile.mktemp(suffix='_sdr_code.py').replace("\\", "/")
             out_file = tempfile.mktemp(suffix='_sdr_out.txt').replace("\\", "/")
             with open(code_file, "w", encoding="utf-8") as f:
-                f.write(code)
+                f.write(code + "\nNone\n")
             
             # Single-line Maya command: redirect stdout → file, exec code, restore
+            # Using semicolons for single-line exec to avoid commandPort newline issues
             run_cmd = (
-                f'exec("import sys\\n'
-                f'_f=open(\'{out_file}\',\'w\',encoding=\'utf-8\')\\n'
-                f'_o=sys.stdout\\n'
-                f'sys.stdout=_f\\n'
-                f'try:\\n'
-                f'    exec(open(\'{code_file}\',encoding=\'utf-8\').read())\\n'
-                f'except Exception as _e:\\n'
-                f'    print(str(_e))\\n'
-                f'finally:\\n'
-                f'    sys.stdout=_o\\n'
-                f'    _f.close()")'
+                f'import sys; _f=open("{out_file}","w",encoding="utf-8"); _o=sys.stdout; sys.stdout=_f; '
+                f'exec(open("{code_file}",encoding="utf-8").read()); '
+                f'sys.stdout=_o; _f.close()'
             )
             ok, err = _send_maya(run_cmd)
             
@@ -182,17 +229,20 @@ def send_code(dcc, code):
 def get_scene_info(dcc):
     """Query current scene name and path from the DCC."""
     if dcc == "maya":
-        # Single-line expression — Maya commandPort returns the last expression value directly.
-        # Using shortName=True as primary since it's most reliable.
+        # Use multi-line code with print() for reliable output
         code = (
-            "import maya.cmds as cmds, json, os; "
-            "p=cmds.file(q=True,sn=True) or ''; "
-            "s=cmds.file(q=True,sn=True,shortName=True) or ''; "
-            "n=os.path.splitext(p.replace(chr(92),'/').split('/')[-1])[0] if p else "
-            "(os.path.splitext(s)[0] if s else 'untitled'); "
-            "json.dumps({'path':p,'name':n})"
+            "import maya.cmds as cmds, json, os\n"
+            "p = cmds.file(q=True, sn=True) or ''\n"
+            "s = cmds.file(q=True, sn=True, shortName=True) or ''\n"
+            "if p:\n"
+            "    n = os.path.splitext(os.path.basename(p))[0]\n"
+            "elif s:\n"
+            "    n = os.path.splitext(s)[0]\n"
+            "else:\n"
+            "    n = 'untitled'\n"
+            "print(json.dumps({'path': p, 'name': n}))\n"
         )
-        success, result = _send_maya(code)
+        success, result = send_code(dcc, code)
     elif dcc == "blender":
         code = (
             "import bpy, json, os\n"
@@ -245,22 +295,64 @@ def take_screenshot(dcc):
             "print(result)\n"
         )
     elif dcc == "blender":
+        # Use bpy.data.images approach — create an image, copy viewport pixels
+        # This avoids bpy.ops entirely and works from any thread
+        import tempfile
+        tmp_path = os.path.join(tempfile.gettempdir(), 'scene_doctor_blender_viewport.png')
+        if os.path.exists(tmp_path):
+            os.remove(tmp_path)
+        
+        # Escape the path for Python string
+        tmp_escaped = tmp_path.replace('\\', '\\\\')
+        
         code = (
-            "import bpy, base64, tempfile, os\n"
-            "tmp = tempfile.mktemp(suffix='.png')\n"
+            "import bpy, os\n"
+            f"tmp = r'{tmp_path}'\n"
             "scene = bpy.context.scene\n"
+            "old_engine = scene.render.engine\n"
             "old_path = scene.render.filepath\n"
             "old_fmt = scene.render.image_settings.file_format\n"
+            "old_x = scene.render.resolution_x\n"
+            "old_y = scene.render.resolution_y\n"
+            "old_pct = scene.render.resolution_percentage\n"
+            "scene.render.engine = 'BLENDER_WORKBENCH'\n"
             "scene.render.filepath = tmp\n"
             "scene.render.image_settings.file_format = 'PNG'\n"
-            "bpy.ops.render.opengl(write_still=True)\n"
+            "scene.render.resolution_x = 960\n"
+            "scene.render.resolution_y = 540\n"
+            "scene.render.resolution_percentage = 100\n"
+            "try:\n"
+            "    bpy.ops.render.render(write_still=True)\n"
+            "except Exception as e:\n"
+            "    print('RENDER_ERROR:' + str(e))\n"
+            "scene.render.engine = old_engine\n"
             "scene.render.filepath = old_path\n"
             "scene.render.image_settings.file_format = old_fmt\n"
+            "scene.render.resolution_x = old_x\n"
+            "scene.render.resolution_y = old_y\n"
+            "scene.render.resolution_percentage = old_pct\n"
             "if os.path.exists(tmp):\n"
-            "    with open(tmp, 'rb') as f:\n"
-            "        print(base64.b64encode(f.read()).decode())\n"
-            "    os.remove(tmp)\n"
+            "    print('SCREENSHOT_OK')\n"
+            "else:\n"
+            "    print('SCREENSHOT_FAILED')\n"
         )
+        
+        success, result = send_code(dcc, code)
+        
+        if not success:
+            return False, f"Screenshot failed: {result[:100]}"
+        
+        # Check if file was created
+        if os.path.exists(tmp_path) and os.path.getsize(tmp_path) > 100:
+            with open(tmp_path, 'rb') as f:
+                raw = f.read()
+            os.remove(tmp_path)
+            if raw[:4] == b'\x89PNG':
+                return True, base64.b64encode(raw).decode('ascii')
+            else:
+                return False, "Screenshot failed — not a valid PNG"
+        else:
+            return False, f"Screenshot failed — file not created. Blender said: {result[:200]}"
     else:
         return False, f"Unknown DCC: {dcc}"
 
@@ -270,7 +362,7 @@ def take_screenshot(dcc):
 
     lines = result.strip().splitlines()
     if lines:
-        b64 = lines[-1].strip()
+        b64 = lines[-1].strip().replace('\n', '').replace('\r', '')
         if len(b64) > 100:
             return True, b64
     return False, f"Screenshot failed. Raw: {result[:200]}"
@@ -285,24 +377,78 @@ def run_scan(dcc):
     if dcc == "maya":
         # Multi-line code → send_code auto-wraps in exec() for Maya
         code = (
-            "import sys\n"
+            "import sys, json\n"
             "scanner_dir = r'd:/work script/ai doctor/v4'\n"
             "if scanner_dir not in sys.path: sys.path.insert(0, scanner_dir)\n"
-            "from scanners import maya_scanner\n"
-            "report = maya_scanner.run_scan()\n"
-            "prompt = maya_scanner.scan_to_prompt(report)\n"
-            "print(prompt)\n"
+            "try:\n"
+            "    from scanners import maya_scanner\n"
+            "    report = maya_scanner.run_scan()\n"
+            "    prompt = maya_scanner.scan_to_prompt(report)\n"
+            "except Exception as e:\n"
+            "    prompt = 'Scanner not found: ' + str(e)\n"
+            "# Add animation overview\n"
+            "import maya.cmds as cmds\n"
+            "anim_summary = '\\n\\n## Animation Overview\\n'\n"
+            "all_curves = cmds.ls(type='animCurve') or []\n"
+            "anim_summary += 'Animation curves in scene: %d\\n' % len(all_curves)\n"
+            "if all_curves:\n"
+            "    stepped = 0\n"
+            "    spline = 0\n"
+            "    linear = 0\n"
+            "    for crv in all_curves[:50]:\n"
+            "        try:\n"
+            "            ott = cmds.keyTangent(crv, q=True, ott=True) or []\n"
+            "            for t in ott:\n"
+            "                if t == 'step': stepped += 1\n"
+            "                elif t == 'linear': linear += 1\n"
+            "                elif t in ('spline','auto','clamped','plateau'): spline += 1\n"
+            "        except: pass\n"
+            "    anim_summary += 'Tangent breakdown: spline/auto=%d, linear=%d, stepped=%d\\n' % (spline, linear, stepped)\n"
+            "    if stepped > spline:\n"
+            "        anim_summary += 'WARNING: Mostly stepped tangents — animation is NOT smooth\\n'\n"
+            "    if stepped > 0 and spline > 0:\n"
+            "        anim_summary += 'WARNING: Mixed tangent types — may cause jerky motion\\n'\n"
+            "fps = cmds.currentUnit(q=True, time=True)\n"
+            "pmin = cmds.playbackOptions(q=True, min=True)\n"
+            "pmax = cmds.playbackOptions(q=True, max=True)\n"
+            "anim_summary += 'Timeline: %.0f - %.0f | FPS: %s\\n' % (pmin, pmax, fps)\n"
+            "print(prompt + anim_summary)\n"
         )
     elif dcc == "blender":
         code = (
             "import sys, os\n"
             "scanner_dir = r'd:/work script/ai doctor/v4'\n"
             "if scanner_dir not in sys.path: sys.path.insert(0, scanner_dir)\n"
-            "from scanners import blender_scanner\n"
-            "report = blender_scanner.run_scan()\n"
-            "prompt = blender_scanner.scan_to_prompt(report)\n"
+            "try:\n"
+            "    from scanners import blender_scanner\n"
+            "    report = blender_scanner.run_scan()\n"
+            "    prompt = blender_scanner.scan_to_prompt(report)\n"
+            "except Exception as e:\n"
+            "    prompt = 'Scanner not found: ' + str(e)\n"
+            "# Add animation overview\n"
+            "import bpy\n"
+            "anim_summary = '\\n\\n## Animation Overview\\n'\n"
+            "animated_objs = [o for o in bpy.context.scene.objects if o.animation_data and o.animation_data.action]\n"
+            "anim_summary += 'Animated objects: %d\\n' % len(animated_objs)\n"
+            "if animated_objs:\n"
+            "    constant = 0\n"
+            "    linear = 0\n"
+            "    bezier = 0\n"
+            "    for obj in animated_objs:\n"
+            "        for fc in obj.animation_data.action.fcurves:\n"
+            "            for kp in fc.keyframe_points:\n"
+            "                if kp.interpolation == 'CONSTANT': constant += 1\n"
+            "                elif kp.interpolation == 'LINEAR': linear += 1\n"
+            "                elif kp.interpolation == 'BEZIER': bezier += 1\n"
+            "    anim_summary += 'Interpolation: bezier=%d, linear=%d, constant=%d\\n' % (bezier, linear, constant)\n"
+            "    if constant > bezier:\n"
+            "        anim_summary += 'WARNING: Mostly constant/stepped — animation is NOT smooth\\n'\n"
+            "    if constant > 0 and bezier > 0:\n"
+            "        anim_summary += 'WARNING: Mixed interpolation — may cause jerky motion\\n'\n"
+            "scene = bpy.context.scene\n"
+            "anim_summary += 'Timeline: %d - %d | FPS: %d\\n' % (scene.frame_start, scene.frame_end, scene.render.fps)\n"
             "print('__SCAN_START__')\n"
-            "print(prompt)\n"
+            "print(prompt + anim_summary)\n"
             "print('__SCAN_END__')\n"
         )
     else:
