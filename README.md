@@ -1,7 +1,7 @@
 # 🩺 Scene Doctor Studio
 
 <p align="center">
-  <img src="assets/scene_doctor_studio_logo.svg" alt="Scene Doctor Studio" width="120"/>
+  <img src="assets/scene_doctor_studio_logo.svg" alt="Scene Doctor Studio" width="280"/>
 </p>
 
 <p align="center">
@@ -314,7 +314,7 @@ MIT License — see [LICENSE](LICENSE)
 ## 👤 Author
 
 **Ezz El-Din Tarek Mostafa**  
-3D Technical Artist | Rigger | Animator  
+CG Technical Director  
 [LinkedIn](https://www.linkedin.com/in/ezzel-din-tarek-mostafa)
 
 ---
