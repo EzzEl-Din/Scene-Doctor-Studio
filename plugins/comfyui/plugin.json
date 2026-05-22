@@ -1,0 +1,10 @@
+{
+  "id": "comfyui",
+  "name": "ComfyUI",
+  "version": "0.1.0",
+  "description": "ComfyUI — workflow graph, custom nodes, model debugging",
+  "color": "#7c3aed",
+  "port": 7005,
+  "files": [],
+  "coming_soon": true
+}

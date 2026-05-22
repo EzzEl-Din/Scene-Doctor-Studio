@@ -1,0 +1,10 @@
+{
+  "id": "nuke",
+  "name": "Nuke",
+  "version": "0.1.0",
+  "description": "Foundry Nuke — node graph, Read nodes, Write nodes",
+  "color": "#10b981",
+  "port": 7004,
+  "files": [],
+  "coming_soon": true
+}

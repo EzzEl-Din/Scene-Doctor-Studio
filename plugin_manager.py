@@ -43,7 +43,7 @@ _BUILTIN_FALLBACK = {
     "maya": {
         "id": "maya",
         "name": "Maya",
-        "version": "1.0",
+        "version": "1.0.0",
         "description": "Autodesk Maya — scene scanning, rigging, rendering",
         "color": "#5a8fc4",
         "port": 7001,
@@ -53,7 +53,7 @@ _BUILTIN_FALLBACK = {
     "blender": {
         "id": "blender",
         "name": "Blender",
-        "version": "1.0",
+        "version": "1.0.0",
         "description": "Blender 3D — scene scanning, materials, modifiers",
         "color": "#f97316",
         "port": 7002,
@@ -77,7 +77,11 @@ class PluginManager:
     # Local state
     # ------------------------------------------------------------------
     def get_installed(self):
-        """Return list of installed plugin IDs."""
+        """Return list of installed plugin IDs.
+        First call ever seeds the built-in plugins (maya, blender) so the
+        store can show Remove / Update for them right away.
+        """
+        self._ensure_builtins_seeded()
         if not os.path.exists(INSTALLED_FILE):
             return []
         try:
@@ -96,6 +100,29 @@ class PluginManager:
                 )
         except Exception:
             pass
+
+    def _ensure_builtins_seeded(self):
+        """One-time seeding so Maya/Blender appear as installed even before
+        the user opens the store. Writes plugin.json from the built-in
+        fallback so per-plugin versions render correctly. Idempotent.
+        """
+        if os.path.exists(INSTALLED_FILE):
+            return
+        _ensure_plugins_dir()
+        seeded = []
+        for pid, manifest in _BUILTIN_FALLBACK.items():
+            plugin_dir = os.path.join(PLUGINS_DIR, pid)
+            try:
+                os.makedirs(plugin_dir, exist_ok=True)
+                manifest_path = os.path.join(plugin_dir, "plugin.json")
+                if not os.path.exists(manifest_path):
+                    with open(manifest_path, 'w', encoding='utf-8') as f:
+                        json.dump(manifest, f, indent=2, ensure_ascii=False)
+                seeded.append(pid)
+            except Exception:
+                continue
+        if seeded:
+            self._write_installed(seeded)
 
     # ------------------------------------------------------------------
     # Remote registry

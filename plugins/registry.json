@@ -1,0 +1,11 @@
+{
+  "plugins": [
+    "maya",
+    "blender",
+    "houdini",
+    "nuke",
+    "comfyui",
+    "unreal"
+  ],
+  "updated": "2026-05-22"
+}

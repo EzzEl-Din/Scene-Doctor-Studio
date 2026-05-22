@@ -1,0 +1,12 @@
+{
+  "id": "maya",
+  "name": "Maya",
+  "version": "1.0.0",
+  "description": "Autodesk Maya — scene scanning, rigging, rendering",
+  "color": "#5a8fc4",
+  "port": 7001,
+  "files": [
+    "scanner.py"
+  ],
+  "coming_soon": false
+}

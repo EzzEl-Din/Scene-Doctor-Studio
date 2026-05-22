@@ -1,0 +1,10 @@
+{
+  "id": "unreal",
+  "name": "Unreal Engine",
+  "version": "0.1.0",
+  "description": "Unreal Engine — assets, blueprints, materials",
+  "color": "#8b5cf6",
+  "port": 7006,
+  "files": [],
+  "coming_soon": true
+}

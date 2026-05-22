@@ -1,0 +1,10 @@
+{
+  "id": "houdini",
+  "name": "Houdini",
+  "version": "0.1.0",
+  "description": "SideFX Houdini — nodes, networks, VEX debugging",
+  "color": "#f59e0b",
+  "port": 7003,
+  "files": [],
+  "coming_soon": true
+}

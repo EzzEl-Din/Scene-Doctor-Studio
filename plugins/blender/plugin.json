@@ -1,0 +1,12 @@
+{
+  "id": "blender",
+  "name": "Blender",
+  "version": "1.0.0",
+  "description": "Blender 3D — scene scanning, materials, modifiers",
+  "color": "#f97316",
+  "port": 7002,
+  "files": [
+    "scanner.py"
+  ],
+  "coming_soon": false
+}
