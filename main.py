@@ -742,6 +742,24 @@ class PluginStoreWindow(QDialog):
         "nuke":    "nuke_.png",
     }
 
+    @staticmethod
+    def _hex_to_rgba(hex_color, alpha=34):
+        """Convert '#RRGGBB' to a Qt-friendly 'rgba(r, g, b, a/255)' string.
+        Qt parses '#RRGGBBAA' as ARGB (not RGBA), so we use rgba() to avoid
+        accidental color shifts when adding transparency.
+        """
+        try:
+            h = hex_color.lstrip('#')
+            if len(h) == 3:
+                h = ''.join(c * 2 for c in h)
+            r = int(h[0:2], 16)
+            g = int(h[2:4], 16)
+            b = int(h[4:6], 16)
+            a = max(0, min(255, int(alpha))) / 255.0
+            return f"rgba({r}, {g}, {b}, {a:.3f})"
+        except Exception:
+            return hex_color
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Plugin Store")
@@ -932,11 +950,12 @@ class PluginStoreWindow(QDialog):
         icon_label.setFixedSize(36, 36)
         icon_label.setAlignment(Qt.AlignCenter)
 
+        icon_filename = self.ICON_FILES.get(plugin_id, "")
         icon_path = os.path.join(
             os.path.dirname(os.path.abspath(__file__)), "dcc icon",
-            self.ICON_FILES.get(plugin_id, "")
-        )
-        if os.path.exists(icon_path):
+            icon_filename,
+        ) if icon_filename else ""
+        if icon_filename and os.path.isfile(icon_path):
             pixmap = QPixmap(icon_path).scaled(
                 28, 28, Qt.KeepAspectRatio, Qt.SmoothTransformation
             )
@@ -947,7 +966,7 @@ class PluginStoreWindow(QDialog):
         else:
             icon_label.setText((manifest.get("name") or plugin_id)[0].upper())
             icon_label.setStyleSheet(f"""
-                background: {color}22;
+                background: {self._hex_to_rgba(color, 34)};
                 color: {color};
                 border: none;
                 border-radius: 8px;
@@ -958,6 +977,7 @@ class PluginStoreWindow(QDialog):
 
         info_widget = QWidget()
         info_widget.setStyleSheet("background: transparent; border: none;")
+        info_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         info_layout = QVBoxLayout(info_widget)
         info_layout.setContentsMargins(0, 0, 0, 0)
         info_layout.setSpacing(2)
@@ -968,6 +988,7 @@ class PluginStoreWindow(QDialog):
             f"background: transparent; border: none;"
         )
         desc = QLabel(manifest.get("description", ""))
+        desc.setWordWrap(True)
         desc.setStyleSheet(
             f"color: {COLORS['text_muted']}; font-size: 11px; "
             f"background: transparent; border: none;"
@@ -977,10 +998,12 @@ class PluginStoreWindow(QDialog):
         layout.addWidget(info_widget, 1)
 
         btn_holder = QWidget()
+        btn_holder.setFixedWidth(170)
         btn_holder.setStyleSheet("background: transparent; border: none;")
         btn_holder_layout = QHBoxLayout(btn_holder)
         btn_holder_layout.setContentsMargins(0, 0, 0, 0)
         btn_holder_layout.setSpacing(6)
+        btn_holder_layout.addStretch()
 
         remote_version = manifest.get("version")
         needs_update = (
@@ -993,7 +1016,7 @@ class PluginStoreWindow(QDialog):
             update_btn.setFixedHeight(32)
             update_btn.setStyleSheet(f"""
                 QPushButton {{
-                    background: {COLORS['accent_orange']}22;
+                    background: {self._hex_to_rgba(COLORS['accent_orange'], 34)};
                     border: 1px solid {COLORS['accent_orange']};
                     border-radius: 8px;
                     color: {COLORS['accent_orange']};
@@ -1014,24 +1037,25 @@ class PluginStoreWindow(QDialog):
             installed_label = QPushButton("✓ Installed")
             installed_label.setEnabled(False)
             installed_label.setFixedHeight(32)
+            installed_label.setFixedWidth(92)
             installed_label.setStyleSheet(f"""
                 QPushButton {{
-                    background: {COLORS['status_success']}22;
+                    background: {self._hex_to_rgba(COLORS['status_success'], 34)};
                     border: 1px solid {COLORS['status_success']};
                     border-radius: 8px;
                     color: {COLORS['status_success']};
                     font-size: 12px;
-                    padding: 4px 12px;
+                    padding: 4px 10px;
                 }}
                 QPushButton:disabled {{
-                    background: {COLORS['status_success']}22;
+                    background: {self._hex_to_rgba(COLORS['status_success'], 34)};
                     border: 1px solid {COLORS['status_success']};
                     color: {COLORS['status_success']};
                 }}
             """)
 
             uninstall_btn = QPushButton("Remove")
-            uninstall_btn.setFixedWidth(70)
+            uninstall_btn.setFixedWidth(64)
             uninstall_btn.setFixedHeight(32)
             uninstall_btn.setStyleSheet(f"""
                 QPushButton {{
@@ -1057,6 +1081,7 @@ class PluginStoreWindow(QDialog):
             soon_btn = QPushButton("Coming Soon")
             soon_btn.setEnabled(False)
             soon_btn.setFixedHeight(32)
+            soon_btn.setFixedWidth(110)
             soon_btn.setStyleSheet(f"""
                 QPushButton {{
                     background: transparent;
@@ -1077,9 +1102,10 @@ class PluginStoreWindow(QDialog):
         else:
             install_btn = QPushButton("⬇ Install")
             install_btn.setFixedHeight(32)
+            install_btn.setFixedWidth(96)
             install_btn.setStyleSheet(f"""
                 QPushButton {{
-                    background: {COLORS['accent_blue']}22;
+                    background: {self._hex_to_rgba(COLORS['accent_blue'], 34)};
                     border: 1px solid {COLORS['accent_blue']};
                     border-radius: 8px;
                     color: {COLORS['accent_blue']};
@@ -1225,7 +1251,7 @@ class StudioWindow(QMainWindow):
 
         # Set window icon — prefer ICO (multi-size) over SVG
         _ico_path = resource_path("scene_doctor.ico")
-        _svg_path = resource_path("scene_doctor_icon_transparent.svg")
+        _svg_path = resource_path("svgs/scene_doctor_icon_transparent.svg")
         if os.path.exists(_ico_path):
             self.setWindowIcon(QIcon(_ico_path))
         elif os.path.exists(_svg_path):
@@ -1473,7 +1499,7 @@ class StudioWindow(QMainWindow):
         header_row.setSpacing(8)
 
         # Logo icon (SVG)
-        _svg_path = resource_path("scene_doctor_icon_transparent.svg")
+        _svg_path = resource_path("svgs/scene_doctor_icon_transparent.svg")
         self._sidebar_icon_lbl = QLabel()
         self._sidebar_icon_lbl.setFixedSize(32, 32)
         self._sidebar_icon_lbl.setStyleSheet("background: transparent;")
@@ -1715,7 +1741,7 @@ class StudioWindow(QMainWindow):
 
         # --- Artifact toggle button ---
         _artifact_icon_path = os.path.join(
-            os.path.dirname(os.path.abspath(__file__)), "icons for buttoms", "icon_artifact.svg"
+            os.path.dirname(os.path.abspath(__file__)), "svgs", "icon_artifact.svg"
         )
         self._artifact_btn = QPushButton()
         self._artifact_btn.setFixedHeight(28)
@@ -1815,8 +1841,8 @@ class StudioWindow(QMainWindow):
         # ---------------------------------------------------------------
         # Input panel card — two rows inside a single rounded container
         # ---------------------------------------------------------------
-        _btn_icon_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "icons for buttoms")
-        _scan_scene_icon = os.path.join(_btn_icon_dir, "icon_scan_scene (1).svg")
+        _btn_icon_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "svgs")
+        _scan_scene_icon = os.path.join(_btn_icon_dir, "icon_scan_scene.svg")
         _scan_sel_icon = os.path.join(_btn_icon_dir, "icon_scan_selection.svg")
 
         self._bottom_wrapper = QWidget()
@@ -4477,7 +4503,7 @@ class StudioWindow(QMainWindow):
             return
 
         _icon_path = os.path.join(
-            os.path.dirname(os.path.abspath(__file__)), "icons for buttoms", "icon_artifact.svg"
+            os.path.dirname(os.path.abspath(__file__)), "svgs", "icon_artifact.svg"
         )
 
         for fname in sorted(os.listdir(artifacts_path)):

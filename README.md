@@ -1,7 +1,7 @@
 # 🩺 Scene Doctor Studio
 
 <p align="center">
-  <img src="assets/scene_doctor_studio_logo.svg" alt="Scene Doctor Studio" width="280"/>
+  <img src="svgs/scene_doctor_studio_logo.svg" alt="Scene Doctor Studio" width="280"/>
 </p>
 
 <p align="center">
@@ -280,8 +280,7 @@ scene_doctor_studio_v1/
 ├── platform_detect.py         # DCC + scanner resolution (plugin first, bundled fallback)
 ├── blender_addon.py           # Blender socket server addon
 ├── APP_FUNCTIONS.md           # Complete function reference
-├── assets/                    # Logo and icons
-└── icons for buttoms/         # Button SVG icons
+└── svgs/                      # All app SVG icons (logos, button glyphs)
 ```
 
 ### Data Storage
