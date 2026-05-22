@@ -171,13 +171,61 @@ def _send_blender(code):
         return False, str(e)
 
 
-def send_code(dcc, code):
+# ---------------------------------------------------------------------------
+# Undo chunk wrapping — let artists Ctrl+Z any code Scene Doctor runs
+# ---------------------------------------------------------------------------
+
+def _indent(code, spaces=4):
+    """Indent every line of a code block — used for wrapping in try/finally."""
+    pad = " " * spaces
+    return "\n".join(f"{pad}{line}" if line else line for line in code.split("\n"))
+
+
+def _wrap_with_undo(dcc, code, undo_label):
+    """Wrap user code in an undo chunk so it can be reversed with Ctrl+Z.
+    Maya: openChunk / closeChunk in try/finally — chunk always closes.
+    Blender: undo_push before, undo() on failure.
+    """
+    safe_label = str(undo_label).replace('"', "'").replace("\n", " ")[:120]
+
+    if dcc == "maya":
+        return (
+            "import maya.cmds as cmds\n"
+            f'cmds.undoInfo(openChunk=True, chunkName="{safe_label}")\n'
+            "try:\n"
+            f"{_indent(code)}\n"
+            "finally:\n"
+            "    cmds.undoInfo(closeChunk=True)\n"
+        )
+    if dcc == "blender":
+        return (
+            "import bpy\n"
+            f'bpy.ops.ed.undo_push(message="{safe_label}")\n'
+            "try:\n"
+            f"{_indent(code)}\n"
+            "except Exception as _sdr_err:\n"
+            "    try: bpy.ops.ed.undo()\n"
+            "    except Exception: pass\n"
+            "    raise _sdr_err\n"
+        )
+    return code
+
+
+def send_code(dcc, code, undo_label=None):
     """Send Python code to a DCC and return (success, result_string).
-    
+
     For Maya multi-line: writes code to a temp .py file, then sends a single-line
     command to Maya that redirects stdout → temp .txt, exec's the .py, reads .txt back.
     This avoids all escaping issues with nested exec() strings.
+
+    If `undo_label` is provided, the code is wrapped in a DCC-native undo chunk
+    so the artist can Ctrl+Z to reverse the entire change. Pass None for
+    read-only operations (scans, screenshots, scene info) to keep the undo
+    history clean.
     """
+    if undo_label:
+        code = _wrap_with_undo(dcc, code, undo_label)
+
     if dcc == "maya":
         if "\n" in code.strip():
             import tempfile, os, time

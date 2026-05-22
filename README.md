@@ -174,6 +174,34 @@ The Analyzer's output flows automatically to the Code Writer when the user reque
 - Auto-run mode requires confirmation dialog
 - 90-second safety timeout resets busy state
 
+### 🔁 Undo & Trace (Trust-Building)
+
+**Undo Chunk wrapping** — every code execution (Run button or auto-run) is wrapped in a DCC-native undo chunk so you can `Ctrl+Z` the entire fix:
+- **Maya**: `cmds.undoInfo(openChunk / closeChunk)` inside try/finally
+- **Blender**: `bpy.ops.ed.undo_push()` before, `bpy.ops.ed.undo()` on failure
+
+After a successful run, the chat shows: `✅ Code executed — press Ctrl+Z in Maya to undo`.
+
+**Tool-Call Trace Log** — every execution is appended as a JSONL entry inside the session folder (`sessions/{dcc}/{session_id}/trace.jsonl`):
+- Timestamp, label (first comment in the code), full code, success/error, undo flag
+- Click the 📋 button in the artifacts panel to render the trace as a markdown report
+- Travels with the session — easy to share for code review
+
+### 🧩 Plugin Store
+
+DCC support is delivered as plugins from a GitHub registry — install only what you need:
+- **Maya** and **Blender** ship as built-ins (bundled scanners as fallback)
+- **Houdini, Nuke, ComfyUI, Unreal** download on demand
+- Each plugin is a folder on GitHub with a `plugin.json` manifest and scanner files
+- Local plugins live in `~/Documents/SceneDoctor/plugins/{plugin_id}/`
+
+**Store UI** (sidebar `+` button):
+- **⬇ Install** — download manifest + files, register the DCC tab
+- **✓ Installed + Remove** — uninstall while keeping all sessions and chat history
+- **↑ Update to vX** — re-download when the manifest version changes
+- Live `Downloading scanner.py...` status during install
+- Confirmation dialog before remove
+
 ---
 
 ## 🚀 Quick Start
@@ -226,8 +254,9 @@ cmds.commandPort(name=":7001", sourceType="python", echoOutput=True)
 | **Groq** | llama-3.3-70b, llama-4-scout | ✓ (scout) | Fast, free tier |
 | **OpenAI** | gpt-4o, gpt-4o-mini | ✓ | Best quality |
 | **Google** | gemini-2.0-flash | ✓ | Fast + vision |
+| **Anthropic** | claude-3-5-sonnet, claude-3-opus | ✓ | Best for coding & reasoning |
 | **Ollama** | llama3, mistral, codellama, llava | ✓ (llava) | Local, private |
-| **DeepSeek** | deepseek-chat, deepseek-coder | ✗ | Great for code |
+| **DeepSeek** | deepseek-v3, deepseek-r1 | ✗ | Great for code |
 | **Any OpenAI-compatible** | — | Depends | Custom endpoints |
 
 **Recommended setup:**
@@ -243,10 +272,12 @@ scene_doctor_studio_v1/
 ├── main.py                    # Main application window (UI + logic)
 ├── ui_widgets.py              # Reusable UI components (bubbles, code blocks, themes)
 ├── ai_backend.py              # AI communication (streaming, prompts, settings)
-├── dcc_connector.py           # DCC communication (Maya/Blender TCP sockets)
+├── dcc_connector.py           # DCC communication + undo-chunk wrapping
 ├── session_manager.py         # Session storage and artifact management
 ├── studio_settings_dialog.py  # Settings dialog UI
 ├── settings.py                # Settings defaults and loading
+├── plugin_manager.py          # GitHub plugin registry (install / uninstall / update)
+├── platform_detect.py         # DCC + scanner resolution (plugin first, bundled fallback)
 ├── blender_addon.py           # Blender socket server addon
 ├── APP_FUNCTIONS.md           # Complete function reference
 ├── assets/                    # Logo and icons
@@ -257,12 +288,19 @@ scene_doctor_studio_v1/
 ```
 ~/Documents/SceneDoctor/
 ├── settings.json
+├── plugins/                       # installed DCC plugins (downloaded from GitHub)
+│   ├── installed.json
+│   └── <plugin_id>/
+│       ├── plugin.json
+│       └── scanner.py
 └── sessions/
     ├── maya/<session_id>/
     │   ├── chat.json
+    │   ├── trace.jsonl            # tool-call trace log (one entry per execution)
     │   └── artifacts/
     └── blender/<session_id>/
         ├── chat.json
+        ├── trace.jsonl
         └── artifacts/
 ```
 
@@ -281,9 +319,12 @@ scene_doctor_studio_v1/
 
 ## 🗺️ Roadmap
 
-- [ ] Houdini support (port 7003)
-- [ ] Nuke support (port 7004)
-- [ ] Plugin marketplace
+- [x] Plugin store (install / uninstall / update from GitHub)
+- [x] Undo-chunk wrapping for every code execution
+- [x] Tool-call trace log per session
+- [ ] Houdini plugin (port 7003)
+- [ ] Nuke plugin (port 7004)
+- [ ] ComfyUI plugin
 - [ ] Batch scene processing
 - [ ] Custom scan presets
 - [ ] Export chat as PDF

@@ -149,7 +149,8 @@ _BASE = {
 }
 
 DEFAULT_SETTINGS = {
-    "installed_dccs": ["maya", "blender"],
+    "installed_dccs": ["maya", "blender"],          # legacy (kept for back-compat)
+    "installed_plugins": ["maya", "blender"],       # new — drives plugin store UI
     "mode": "single",
     "theme": "dark",
     "accent_color": "#2d9cdb",

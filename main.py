@@ -5,6 +5,7 @@ Connects to Maya/Blender via TCP sockets.
 Built by Ezz El-Din
 """
 import sys, os, re, json
+from datetime import datetime
 
 # Fix Windows rendering glitches — must be set before Qt imports
 os.environ["QT_OPENGL"] = "software"
@@ -531,7 +532,10 @@ class DCCTabStrip(QWidget):
 
         # Installed DCC buttons
         from settings import load_settings
-        installed = load_settings().get("installed_dccs", ["maya", "blender"])
+        _s = load_settings()
+        installed = _s.get("installed_plugins") or _s.get(
+            "installed_dccs", ["maya", "blender"]
+        )
         for dcc in installed:
             btn = self._make_dcc_icon_btn(dcc)
             layout.addWidget(btn)
@@ -698,69 +702,71 @@ class DCCTabStrip(QWidget):
             layout.addWidget(btn)
             self._buttons[dcc] = btn
 
+    def remove_dcc(self, dcc):
+        """Remove a DCC tab from the strip after the plugin is uninstalled."""
+        btn = self._buttons.pop(dcc, None)
+        if btn is not None:
+            layout = self._container.layout()
+            layout.removeWidget(btn)
+            btn.deleteLater()
+            # If the removed tab was active, fall back to "All"
+            if self._active_dcc == dcc:
+                self._all_btn.setChecked(True)
+                self._active_dcc = "all"
+                self.dcc_selected.emit("all")
+
 class PluginStoreWindow(QDialog):
-    """Plugin store — install DCC support from GitHub."""
-    
-    dcc_installed = Signal(str)
-    
-    AVAILABLE_PLUGINS = {
-        "maya": {
-            "label": "Maya",
-            "description": "Autodesk Maya — scene scanning, rigging, rendering",
-            "color": "#2563eb",
-            "scanner_file": "maya_scanner.py",
-            "github_url": "https://raw.githubusercontent.com/EzzEl-Din/Scene-Doctor-Studio/main/scanners/maya_scanner.py",
-        },
-        "blender": {
-            "label": "Blender",
-            "description": "Blender 3D — scene scanning, materials, modifiers",
-            "color": "#f97316",
-            "scanner_file": "blender_scanner.py",
-            "github_url": "https://raw.githubusercontent.com/EzzEl-Din/Scene-Doctor-Studio/main/scanners/blender_scanner.py",
-        },
-        "houdini": {
-            "label": "Houdini",
-            "description": "SideFX Houdini — nodes, networks, VEX debugging",
-            "color": "#f59e0b",
-            "scanner_file": "houdini_scanner.py",
-            "github_url": "https://raw.githubusercontent.com/EzzEl-Din/Scene-Doctor-Studio/main/scanners/houdini_scanner.py",
-            "coming_soon": True,
-        },
-        "nuke": {
-            "label": "Nuke",
-            "description": "Foundry Nuke — node graph, Read nodes, Write nodes",
-            "color": "#10b981",
-            "scanner_file": "nuke_scanner.py",
-            "github_url": "https://raw.githubusercontent.com/EzzEl-Din/Scene-Doctor-Studio/main/scanners/nuke_scanner.py",
-            "coming_soon": True,
-        },
-        "unreal": {
-            "label": "Unreal Engine",
-            "description": "Unreal Engine — assets, blueprints, materials",
-            "color": "#8b5cf6",
-            "scanner_file": "unreal_scanner.py",
-            "github_url": "",
-            "coming_soon": True,
-        },
+    """Plugin store — install / uninstall / update DCC plugins from GitHub.
+
+    Drives off the GitHub registry and the local PluginManager. Users only
+    download what they need; uninstall removes plugin files but keeps
+    sessions and chat history.
+    """
+
+    dcc_installed = Signal(str)     # emitted after a plugin is installed
+    dcc_uninstalled = Signal(str)   # emitted after a plugin is uninstalled
+
+    DISPLAY_DEFAULTS = {
+        "maya":     {"color": "#5a8fc4"},
+        "blender":  {"color": "#f97316"},
+        "houdini":  {"color": "#f59e0b"},
+        "nuke":     {"color": "#10b981"},
+        "comfyui":  {"color": "#7c3aed"},
+        "unreal":   {"color": "#8b5cf6"},
     }
-    
+
+    ICON_FILES = {
+        "maya":    "autodesk-maya-seeklogo.png",
+        "blender": "blender-seeklogo.png",
+        "houdini": "houdini_.png",
+        "nuke":    "nuke_.png",
+    }
+
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("Add DCC Support")
-        self.setFixedSize(520, 540)
+        self.setWindowTitle("Plugin Store")
+        self.setFixedSize(560, 580)
         self.setWindowFlags(Qt.Dialog | Qt.FramelessWindowHint)
         self.setAttribute(Qt.WA_TranslucentBackground)
-        self._setup_ui()
 
-    def _setup_ui(self):
-        from settings import load_settings
-        installed = load_settings().get("installed_dccs", ["maya", "blender"])
+        from plugin_manager import PluginManager
+        self._plugin_manager = PluginManager()
+        self._card_widgets = {}
+        self._cards_layout = None
+        self._status_label = None
 
+        self._build_chrome()
+        self._refresh_cards()
+
+    # ------------------------------------------------------------------
+    # UI construction
+    # ------------------------------------------------------------------
+    def _build_chrome(self):
         if self.layout():
             QWidget().setLayout(self.layout())
 
-        main = QVBoxLayout(self)
-        main.setContentsMargins(0, 0, 0, 0)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
 
         container = QFrame()
         container.setObjectName("pluginStoreContainer")
@@ -780,12 +786,13 @@ class PluginStoreWindow(QDialog):
         """)
         layout = QVBoxLayout(container)
         layout.setContentsMargins(24, 24, 24, 24)
-        layout.setSpacing(16)
+        layout.setSpacing(14)
 
-        # Header row
         header_layout = QHBoxLayout()
-        title = QLabel("DCC Support")
-        title.setStyleSheet(f"color: {COLORS['text']}; font-size: 18px; font-weight: 700;")
+        title = QLabel("Plugin Store")
+        title.setStyleSheet(
+            f"color: {COLORS['text']}; font-size: 18px; font-weight: 700;"
+        )
 
         close_btn = QPushButton("X")
         close_btn.setObjectName("pluginStoreClose")
@@ -811,11 +818,17 @@ class PluginStoreWindow(QDialog):
         header_layout.addWidget(close_btn)
         layout.addLayout(header_layout)
 
-        subtitle = QLabel("Install scanner support for your DCC applications.")
+        subtitle = QLabel("Install only the DCCs you need. Plugins live on GitHub.")
         subtitle.setStyleSheet(f"color: {COLORS['text_muted']}; font-size: 13px;")
         layout.addWidget(subtitle)
 
-        # Scroll area for cards
+        self._status_label = QLabel("")
+        self._status_label.setStyleSheet(
+            f"color: {COLORS['text_muted']}; font-size: 11px;"
+        )
+        self._status_label.setVisible(False)
+        layout.addWidget(self._status_label)
+
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.NoFrame)
@@ -824,29 +837,87 @@ class PluginStoreWindow(QDialog):
 
         cards_widget = QWidget()
         cards_widget.setStyleSheet("background: transparent;")
-        cards_layout = QVBoxLayout(cards_widget)
-        cards_layout.setSpacing(8)
+        self._cards_layout = QVBoxLayout(cards_widget)
+        self._cards_layout.setSpacing(8)
+        self._cards_layout.addStretch()
 
-        for dcc_key, info in self.AVAILABLE_PLUGINS.items():
-            card = self._make_plugin_card(dcc_key, info, dcc_key in installed)
-            cards_layout.addWidget(card)
-
-        cards_layout.addStretch()
         scroll.setWidget(cards_widget)
         layout.addWidget(scroll)
 
-        main.addWidget(container)
-    
-    def _make_plugin_card(self, dcc_key, info, is_installed):
+        outer.addWidget(container)
+
+    # ------------------------------------------------------------------
+    # Registry resolution + refresh
+    # ------------------------------------------------------------------
+    def _resolve_plugins(self):
+        """Build the list of plugin_ids to display, plus a manifest for each.
+        Tries the GitHub registry first; falls back to whatever is locally
+        installed plus built-in defaults so the dialog still works offline.
+        """
+        ids = self._plugin_manager.fetch_registry()
+        if not ids:
+            installed = self._plugin_manager.get_installed()
+            ids = list(dict.fromkeys(["maya", "blender"] + installed))
+
+        manifests = {}
+        for pid in ids:
+            local = self._plugin_manager.get_local_manifest(pid)
+            if local:
+                manifests[pid] = local
+                continue
+            remote = self._plugin_manager.fetch_plugin_manifest(pid)
+            if remote:
+                manifests[pid] = remote
+            else:
+                fallback = self._plugin_manager.fallback_manifest(pid)
+                if fallback:
+                    manifests[pid] = fallback
+                else:
+                    manifests[pid] = {
+                        "id": pid,
+                        "name": pid.capitalize(),
+                        "description": "",
+                        "version": "?",
+                        "files": [],
+                        "coming_soon": True,
+                    }
+        return ids, manifests
+
+    def _refresh_cards(self):
+        if self._cards_layout is None:
+            return
+        while self._cards_layout.count() > 1:
+            item = self._cards_layout.takeAt(0)
+            w = item.widget()
+            if w:
+                w.deleteLater()
+        self._card_widgets.clear()
+
+        ids, manifests = self._resolve_plugins()
+        installed_ids = set(self._plugin_manager.get_installed())
+
+        for pid in ids:
+            manifest = manifests.get(pid, {})
+            local = self._plugin_manager.get_local_manifest(pid)
+            local_version = (local or {}).get("version") if pid in installed_ids else None
+            card = self._make_plugin_card(
+                pid, manifest, pid in installed_ids, local_version
+            )
+            self._cards_layout.insertWidget(self._cards_layout.count() - 1, card)
+
+    # ------------------------------------------------------------------
+    # Card construction
+    # ------------------------------------------------------------------
+    def _make_plugin_card(self, plugin_id, manifest, is_installed, local_version=None):
         card = QFrame()
-        card.setObjectName(f"card_{dcc_key}")
+        card.setObjectName(f"card_{plugin_id}")
         card.setStyleSheet(f"""
-            QFrame#card_{dcc_key} {{
+            QFrame#card_{plugin_id} {{
                 background: {COLORS['bg_secondary']};
                 border: 1px solid {COLORS['border']};
                 border-radius: 10px;
             }}
-            QFrame#card_{dcc_key}:hover {{
+            QFrame#card_{plugin_id}:hover {{
                 border-color: {COLORS['border_hover']};
             }}
         """)
@@ -855,43 +926,34 @@ class PluginStoreWindow(QDialog):
         layout.setContentsMargins(14, 12, 14, 12)
         layout.setSpacing(12)
 
-        # Icon — use PNG if available, else colored letter
+        color = (manifest.get("color")
+                 or self.DISPLAY_DEFAULTS.get(plugin_id, {}).get("color", "#666"))
         icon_label = QLabel()
         icon_label.setFixedSize(36, 36)
         icon_label.setAlignment(Qt.AlignCenter)
 
-        _icon_files = {
-            "maya": "autodesk-maya-seeklogo.png",
-            "blender": "blender-seeklogo.png",
-            "houdini": "houdini_.png",
-            "nuke": "nuke_.png",
-        }
         icon_path = os.path.join(
             os.path.dirname(os.path.abspath(__file__)), "dcc icon",
-            _icon_files.get(dcc_key, "")
+            self.ICON_FILES.get(plugin_id, "")
         )
-
         if os.path.exists(icon_path):
             pixmap = QPixmap(icon_path).scaled(
                 28, 28, Qt.KeepAspectRatio, Qt.SmoothTransformation
             )
             icon_label.setPixmap(pixmap)
-            icon_label.setStyleSheet(f"""
-                background: {COLORS['bg_dark']};
-                border: none;
-                border-radius: 8px;
-            """)
+            icon_label.setStyleSheet(
+                f"background: {COLORS['bg_dark']}; border: none; border-radius: 8px;"
+            )
         else:
-            icon_label.setText(info["label"][0])
+            icon_label.setText((manifest.get("name") or plugin_id)[0].upper())
             icon_label.setStyleSheet(f"""
-                background: {info['color']}22;
-                color: {info['color']};
+                background: {color}22;
+                color: {color};
                 border: none;
                 border-radius: 8px;
                 font-size: 16px;
                 font-weight: bold;
             """)
-
         layout.addWidget(icon_label)
 
         info_widget = QWidget()
@@ -900,117 +962,255 @@ class PluginStoreWindow(QDialog):
         info_layout.setContentsMargins(0, 0, 0, 0)
         info_layout.setSpacing(2)
 
-        name = QLabel(info["label"])
-        name.setStyleSheet(f"color: {COLORS['text']}; font-size: 14px; font-weight: 600; background: transparent; border: none;")
-        desc = QLabel(info["description"])
-        desc.setStyleSheet(f"color: {COLORS['text_muted']}; font-size: 11px; background: transparent; border: none;")
-
+        name = QLabel(manifest.get("name") or plugin_id.capitalize())
+        name.setStyleSheet(
+            f"color: {COLORS['text']}; font-size: 14px; font-weight: 600; "
+            f"background: transparent; border: none;"
+        )
+        desc = QLabel(manifest.get("description", ""))
+        desc.setStyleSheet(
+            f"color: {COLORS['text_muted']}; font-size: 11px; "
+            f"background: transparent; border: none;"
+        )
         info_layout.addWidget(name)
         info_layout.addWidget(desc)
         layout.addWidget(info_widget, 1)
-        
-        if is_installed:
-            btn = QPushButton("Installed")
-            btn.setObjectName(f"installBtn_{dcc_key}")
-            btn.setFixedWidth(100)
-            btn.setFixedHeight(32)
-            btn.setEnabled(False)
-            btn.setStyleSheet(f"""
-                QPushButton#installBtn_{dcc_key} {{
-                    background: #14532d;
-                    border: 1px solid #16a34a;
+
+        btn_holder = QWidget()
+        btn_holder.setStyleSheet("background: transparent; border: none;")
+        btn_holder_layout = QHBoxLayout(btn_holder)
+        btn_holder_layout.setContentsMargins(0, 0, 0, 0)
+        btn_holder_layout.setSpacing(6)
+
+        remote_version = manifest.get("version")
+        needs_update = (
+            is_installed and remote_version and local_version
+            and remote_version != local_version
+        )
+
+        if is_installed and needs_update:
+            update_btn = QPushButton(f"↑ Update to {remote_version}")
+            update_btn.setFixedHeight(32)
+            update_btn.setStyleSheet(f"""
+                QPushButton {{
+                    background: {COLORS['accent_orange']}22;
+                    border: 1px solid {COLORS['accent_orange']};
                     border-radius: 8px;
-                    color: #4ade80;
+                    color: {COLORS['accent_orange']};
                     font-size: 12px;
-                    font-weight: 600;
+                    padding: 4px 12px;
                 }}
-                QPushButton#installBtn_{dcc_key}:disabled {{
-                    background: #14532d;
-                    border: 1px solid #16a34a;
-                    color: #4ade80;
+                QPushButton:hover {{
+                    background: {COLORS['accent_orange']};
+                    color: {COLORS.get('btn_primary_text', COLORS['text'])};
                 }}
             """)
-        elif info.get("coming_soon"):
-            btn = QPushButton("Soon")
-            btn.setObjectName(f"soonBtn_{dcc_key}")
-            btn.setFixedWidth(90)
-            btn.setFixedHeight(32)
-            btn.setEnabled(False)
-            btn.setStyleSheet(f"""
-                QPushButton#soonBtn_{dcc_key} {{
-                    background: transparent;
-                    border: 1px solid #374151;
+            update_btn.clicked.connect(
+                lambda checked, pid=plugin_id: self._update_plugin(pid)
+            )
+            btn_holder_layout.addWidget(update_btn)
+
+        elif is_installed:
+            installed_label = QPushButton("✓ Installed")
+            installed_label.setEnabled(False)
+            installed_label.setFixedHeight(32)
+            installed_label.setStyleSheet(f"""
+                QPushButton {{
+                    background: {COLORS['status_success']}22;
+                    border: 1px solid {COLORS['status_success']};
                     border-radius: 8px;
-                    color: #4b5563;
+                    color: {COLORS['status_success']};
                     font-size: 12px;
+                    padding: 4px 12px;
                 }}
-                QPushButton#soonBtn_{dcc_key}:disabled {{
-                    background: transparent;
-                    border: 1px solid #374151;
-                    color: #4b5563;
+                QPushButton:disabled {{
+                    background: {COLORS['status_success']}22;
+                    border: 1px solid {COLORS['status_success']};
+                    color: {COLORS['status_success']};
                 }}
             """)
+
+            uninstall_btn = QPushButton("Remove")
+            uninstall_btn.setFixedWidth(70)
+            uninstall_btn.setFixedHeight(32)
+            uninstall_btn.setStyleSheet(f"""
+                QPushButton {{
+                    background: transparent;
+                    border: 1px solid {COLORS['border']};
+                    border-radius: 8px;
+                    color: {COLORS['text_muted']};
+                    font-size: 11px;
+                    padding: 4px 8px;
+                }}
+                QPushButton:hover {{
+                    border-color: {COLORS['accent_red']};
+                    color: {COLORS['accent_red']};
+                }}
+            """)
+            uninstall_btn.clicked.connect(
+                lambda checked, pid=plugin_id: self._uninstall_plugin(pid)
+            )
+            btn_holder_layout.addWidget(installed_label)
+            btn_holder_layout.addWidget(uninstall_btn)
+
+        elif manifest.get("coming_soon"):
+            soon_btn = QPushButton("Coming Soon")
+            soon_btn.setEnabled(False)
+            soon_btn.setFixedHeight(32)
+            soon_btn.setStyleSheet(f"""
+                QPushButton {{
+                    background: transparent;
+                    border: 1px solid {COLORS['border']};
+                    border-radius: 8px;
+                    color: {COLORS['text_muted']};
+                    font-size: 12px;
+                    padding: 4px 12px;
+                }}
+                QPushButton:disabled {{
+                    background: transparent;
+                    border: 1px solid {COLORS['border']};
+                    color: {COLORS['text_muted']};
+                }}
+            """)
+            btn_holder_layout.addWidget(soon_btn)
+
         else:
-            btn = QPushButton("Install")
-            btn.setObjectName(f"dlBtn_{dcc_key}")
-            btn.setFixedWidth(90)
-            btn.setFixedHeight(32)
-            btn.setStyleSheet(f"""
-                QPushButton#dlBtn_{dcc_key} {{
-                    background: #1e3a5f;
-                    border: 1px solid #2563eb;
+            install_btn = QPushButton("⬇ Install")
+            install_btn.setFixedHeight(32)
+            install_btn.setStyleSheet(f"""
+                QPushButton {{
+                    background: {COLORS['accent_blue']}22;
+                    border: 1px solid {COLORS['accent_blue']};
                     border-radius: 8px;
-                    color: #60a5fa;
+                    color: {COLORS['accent_blue']};
                     font-size: 12px;
+                    padding: 4px 12px;
                 }}
-                QPushButton#dlBtn_{dcc_key}:hover {{
+                QPushButton:hover {{
                     background: {COLORS['accent_blue']};
                     color: {COLORS.get('btn_primary_text', COLORS['text'])};
                 }}
             """)
-            btn.clicked.connect(
-                lambda checked, k=dcc_key, i=info: self._install_plugin(k, i)
+            install_btn.clicked.connect(
+                lambda checked, pid=plugin_id: self._install_plugin(pid)
             )
-        
-        layout.addWidget(btn)
+            btn_holder_layout.addWidget(install_btn)
+
+        layout.addWidget(btn_holder)
+        self._card_widgets[plugin_id] = {
+            "card": card,
+            "btn_holder": btn_holder,
+        }
         return card
-    
-    def _install_plugin(self, dcc_key, info):
-        import urllib.request
-        
+
+    # ------------------------------------------------------------------
+    # Status / loading helpers
+    # ------------------------------------------------------------------
+    def _set_card_loading(self, plugin_id, loading):
+        widgets = self._card_widgets.get(plugin_id)
+        if not widgets:
+            return
+        holder = widgets.get("btn_holder")
+        if holder is None:
+            return
+        for child in holder.findChildren(QPushButton):
+            child.setEnabled(not loading)
+
+    def _update_card_status(self, plugin_id, message):
+        if self._status_label is None:
+            return
+        self._status_label.setText(f"{plugin_id}: {message}")
+        self._status_label.setVisible(bool(message))
+        QApplication.processEvents()
+
+    def _clear_status(self):
+        if self._status_label is None:
+            return
+        self._status_label.setText("")
+        self._status_label.setVisible(False)
+
+    def _show_success(self, message):
+        QMessageBox.information(self, "Plugin Store", message)
+
+    def _show_error(self, message):
+        QMessageBox.warning(self, "Plugin Store", message)
+
+    # ------------------------------------------------------------------
+    # Persistence helpers
+    # ------------------------------------------------------------------
+    def _persist_installed(self):
+        """Mirror PluginManager's installed list into settings.json."""
         try:
-            url = info["github_url"]
-            scanner_dir = os.path.join(
-                os.path.dirname(os.path.abspath(__file__)), "scanners"
-            )
-            os.makedirs(scanner_dir, exist_ok=True)
-            
-            dest = os.path.join(scanner_dir, info["scanner_file"])
-            if url:
-                urllib.request.urlretrieve(url, dest)
-            
             from settings import load_settings, save_settings
+            installed = self._plugin_manager.get_installed()
             settings = load_settings()
-            installed = settings.get("installed_dccs", ["maya", "blender"])
-            if dcc_key not in installed:
-                installed.append(dcc_key)
+            settings["installed_plugins"] = installed
             settings["installed_dccs"] = installed
             save_settings(settings)
-            
-            self.dcc_installed.emit(dcc_key)
-            
-            QMessageBox.information(
-                self, "Installed",
-                f"{info['label']} support installed successfully!\n"
-                f"Restart the app to see it in the sidebar."
-            )
-            self._setup_ui()
-            
-        except Exception as e:
-            QMessageBox.warning(
-                self, "Install Failed",
-                f"Could not download {info['label']} scanner:\n{str(e)}"
-            )
+        except Exception:
+            pass
+
+    # ------------------------------------------------------------------
+    # Install / uninstall / update actions
+    # ------------------------------------------------------------------
+    def _install_plugin(self, plugin_id):
+        self._set_card_loading(plugin_id, True)
+        self._update_card_status(plugin_id, "Starting...")
+
+        success, message = self._plugin_manager.install(
+            plugin_id, lambda m: self._update_card_status(plugin_id, m)
+        )
+
+        self._clear_status()
+        self._set_card_loading(plugin_id, False)
+
+        if success:
+            self._persist_installed()
+            self.dcc_installed.emit(plugin_id)
+            self._refresh_cards()
+            self._show_success(message)
+        else:
+            self._show_error(message)
+
+    def _uninstall_plugin(self, plugin_id):
+        confirm = QMessageBox.question(
+            self,
+            "Remove Plugin",
+            f"Remove {plugin_id.capitalize()} support?\n"
+            f"Your sessions and chat history will be kept.",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        if confirm != QMessageBox.Yes:
+            return
+
+        success, message = self._plugin_manager.uninstall(plugin_id)
+        if success:
+            self._persist_installed()
+            self.dcc_uninstalled.emit(plugin_id)
+            self._refresh_cards()
+        else:
+            self._show_error(message)
+
+    def _update_plugin(self, plugin_id):
+        self._set_card_loading(plugin_id, True)
+        self._update_card_status(plugin_id, "Updating...")
+
+        success, message = self._plugin_manager.update(
+            plugin_id, lambda m: self._update_card_status(plugin_id, m)
+        )
+
+        self._clear_status()
+        self._set_card_loading(plugin_id, False)
+
+        if success:
+            self._persist_installed()
+            self.dcc_installed.emit(plugin_id)
+            self._refresh_cards()
+            self._show_success(message)
+        else:
+            self._show_error(message)
+
 
 # ---------------------------------------------------------------------------
 # Main Window
@@ -1932,6 +2132,16 @@ class StudioWindow(QMainWindow):
         """)
         self._ap_download_all_btn.clicked.connect(self._download_all_artifacts)
         _ap_header.addWidget(self._ap_download_all_btn)
+
+        # Trace log button — surface the tool-call audit trail as an artifact
+        self._ap_trace_btn = QPushButton("\U0001f4cb")
+        self._ap_trace_btn.setFixedSize(28, 28)
+        self._ap_trace_btn.setToolTip("View tool-call trace for this session")
+        self._ap_trace_btn.setCursor(Qt.PointingHandCursor)
+        self._ap_trace_btn.setStyleSheet(self._ap_download_all_btn.styleSheet())
+        self._ap_trace_btn.clicked.connect(self._show_trace_log)
+        _ap_header.addWidget(self._ap_trace_btn)
+
         _ap_lv_layout.addLayout(_ap_header)
 
         # Scroll area for artifact rows
@@ -2882,6 +3092,7 @@ class StudioWindow(QMainWindow):
     def _show_plugin_store(self):
         store = PluginStoreWindow(self)
         store.dcc_installed.connect(self._dcc_strip.add_dcc)
+        store.dcc_uninstalled.connect(self._dcc_strip.remove_dcc)
         store.exec()
 
     def _select_session(self, session_id):
@@ -4810,14 +5021,23 @@ class StudioWindow(QMainWindow):
         if not self._current_session:
             return
         dcc = self._current_session.get("dcc", "")
+        any_success = False
         for i, code in enumerate(code_blocks, 1):
             code = self._sanitize_node_names(code)
-            success, result = dcc_connector.send_code(dcc, code)
+            undo_label = self._extract_undo_label(code)
+            success, result = dcc_connector.send_code(dcc, code, undo_label)
             if success:
+                self._log_trace(code, result)
+                any_success = True
                 preview = result.strip()[:120] if result.strip() not in ("", "OK") else "OK"
                 self._add_system_msg(f"\u2705 Auto-run block {i}: {preview}")
             else:
+                self._log_trace(code, result, error_msg=result)
                 self._add_system_msg(f"\u26a0 Auto-run block {i} error: {result[:200]}")
+        if any_success and dcc:
+            self._add_system_msg(
+                f"\u21a9 Press Ctrl+Z in {dcc.capitalize()} to undo any block above"
+            )
 
     def _on_scan(self):
         if self._is_busy or not self._current_session:
@@ -5466,6 +5686,147 @@ class StudioWindow(QMainWindow):
     # -----------------------------------------------------------------------
     # Code execution
     # -----------------------------------------------------------------------
+    def _extract_undo_label(self, code):
+        """Pick a short label from the first comment in the code block.
+        Falls back to 'Scene Doctor Fix' when no comment is present.
+        """
+        for line in code.split('\n'):
+            stripped = line.strip()
+            if stripped.startswith('#'):
+                label = stripped.lstrip('#').strip()
+                if label:
+                    return label[:80]
+        return "Scene Doctor Fix"
+
+    def _log_trace(self, code, result, error_msg=""):
+        """Append a tool-call trace entry to this session's JSONL trace file.
+        One entry per execution — never raises, never blocks the UI.
+        Trace file lives inside the session folder so it travels with it.
+        """
+        try:
+            session = self._current_session or {}
+            session_id = session.get("session_id", "unknown")
+            dcc = session.get("dcc", "unknown")
+            entry = {
+                "timestamp": datetime.now().isoformat(),
+                "session_id": session_id,
+                "dcc": dcc,
+                "scene": session.get("scene_name", ""),
+                "action": "code_execution",
+                "label": self._extract_undo_label(code),
+                "code": code,
+                "result": "error" if error_msg else "success",
+                "error_msg": error_msg or "",
+                "undo_available": True,
+            }
+            session_dir = os.path.join(
+                os.path.expanduser("~/Documents/SceneDoctor"),
+                "sessions", dcc, session_id,
+            )
+            os.makedirs(session_dir, exist_ok=True)
+            trace_file = os.path.join(session_dir, "trace.jsonl")
+            with open(trace_file, 'a', encoding='utf-8') as f:
+                f.write(json.dumps(entry, ensure_ascii=False) + '\n')
+        except Exception:
+            # Trace logging must never break code execution
+            pass
+
+    def _show_trace_log(self):
+        """Save the current session's trace log as a markdown artifact."""
+        if not self._current_session:
+            self._add_system_msg("No active session.")
+            return
+
+        session_id = self._current_session.get("session_id", "")
+        dcc_key = self._current_session.get("dcc", "unknown")
+        session_dir = os.path.join(
+            os.path.expanduser("~/Documents/SceneDoctor"),
+            "sessions", dcc_key, session_id,
+        )
+        trace_file = os.path.join(session_dir, "trace.jsonl")
+
+        if not os.path.exists(trace_file):
+            self._add_system_msg("No trace log for this session yet.")
+            return
+
+        entries = []
+        try:
+            with open(trace_file, 'r', encoding='utf-8') as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        entries.append(json.loads(line))
+                    except Exception:
+                        continue
+        except Exception as e:
+            self._add_system_msg(f"\u26a0 Could not read trace log: {e}")
+            return
+
+        if not entries:
+            self._add_system_msg("Trace log is empty.")
+            return
+
+        scene = self._current_session.get('scene_name', '')
+        dcc = (self._current_session.get('dcc', '') or '').capitalize()
+        report = ["# Tool-Call Trace", "",
+                  f"**Session**: {scene}",
+                  f"**DCC**: {dcc}",
+                  f"**Entries**: {len(entries)}",
+                  "", "---", ""]
+
+        for i, entry in enumerate(entries, 1):
+            status = "\u2705" if entry.get("result") == "success" else "\u274c"
+            label = entry.get("label", "Code execution")
+            report.append(f"## {i}. {status} {label}")
+            report.append(f"**Time**: {entry.get('timestamp', '')}")
+            report.append("")
+            report.append("```python")
+            report.append(entry.get("code", ""))
+            report.append("```")
+            report.append("")
+            if entry.get("error_msg"):
+                report.append(f"**Error**: {entry['error_msg']}")
+                report.append("")
+            report.append("---")
+            report.append("")
+
+        markdown = "\n".join(report)
+
+        # Save as session artifact (reuses existing artifact storage)
+        art_dir = os.path.join(
+            session_manager.SESSIONS_DIR, dcc_key, session_id, "artifacts"
+        )
+        try:
+            os.makedirs(art_dir, exist_ok=True)
+        except Exception:
+            pass
+
+        art_filename = f"trace_{session_id[:8] or 'session'}.md"
+        art_path = os.path.join(art_dir, art_filename)
+        try:
+            with open(art_path, "w", encoding="utf-8") as f:
+                f.write(markdown)
+        except Exception as e:
+            self._add_system_msg(f"\u26a0 Could not save trace artifact: {e}")
+            return
+
+        # Surface it through the existing artifacts panel
+        try:
+            self._refresh_artifacts_panel()
+            if not self._artifacts_panel.isVisible():
+                self._artifacts_panel.setVisible(True)
+                self._animate_artifacts_panel(close=False)
+            self._open_artifact_in_viewer(art_path)
+        except Exception:
+            pass
+
+        self._add_system_msg(
+            f"\U0001f4cb Trace log saved as artifact ({len(entries)} "
+            f"{'entry' if len(entries) == 1 else 'entries'})"
+        )
+
     def _run_code(self, code):
         if not self._current_session:
             return
@@ -5473,15 +5834,25 @@ class StudioWindow(QMainWindow):
         code = self._sanitize_node_names(code)
         self._set_dcc_loading("Running...")
 
-        self._dcc_worker = DCCWorker(dcc_connector.send_code, dcc, code)
+        # Wrap in undo chunk so the artist can Ctrl+Z this entire fix
+        undo_label = self._extract_undo_label(code)
+        self._dcc_worker = DCCWorker(
+            dcc_connector.send_code, dcc, code, undo_label
+        )
 
-        def _on_run_done(success, result, _code=code):
+        def _on_run_done(success, result, _code=code, _dcc=dcc):
             self._clear_dcc_loading()
             if success:
-                self._add_system_msg(f"\u2705 Code executed\n{result[:200]}")
+                self._log_trace(_code, result)
+                hint = (f" — press Ctrl+Z in {_dcc.capitalize()} to undo"
+                        if _dcc else "")
+                self._add_system_msg(
+                    f"\u2705 Code executed{hint}\n{result[:200]}"
+                )
                 # Only auto-check for fix/repair operations, not creation
                 # Skip agentic check for simple commands to avoid duplicates
             else:
+                self._log_trace(_code, result, error_msg=result)
                 self._add_system_msg(f"\u26a0 Execution error: {result}")
             # Update the code block widget result badge
             for i in range(self.chat_layout.count()):
